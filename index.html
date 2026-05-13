@@ -17,15 +17,14 @@ const COLS = 24;
 const ROWS = 16;
 const PANEL_W = 240;
 const TOP_H = 50;
-const CW = COLS * CELL + PANEL_W;  // 1200
-const CH = ROWS * CELL + TOP_H;    // 690
+const CW = COLS * CELL + PANEL_W;
+const CH = ROWS * CELL + TOP_H;
 
 const canvas = document.getElementById('c');
 canvas.width = CW;
 canvas.height = CH;
 const ctx = canvas.getContext('2d');
 
-// 24×16 winding path: left edge row 2 → right edge row 13
 const FINAL_PATH = [
   [0,2],[1,2],[2,2],[3,2],[4,2],[5,2],[6,2],[7,2],
   [7,3],[7,4],[7,5],[7,6],[7,7],[7,8],
@@ -44,16 +43,15 @@ const WAYPOINTS = FINAL_PATH.map(([c,r]) => ({
   y: r * CELL + TOP_H + CELL / 2,
 }));
 
-// Ordered weakest→strongest (also cost order)
 const TOWER_TYPES = {
-  basic:    { name:'Basic',     color:'#4fc3f7', cost:50,  dmg:20,  range:3,   rate:1.56, splash:0,   burnDps:0,  burnDur:0, desc:'Fast & cheap'     },
-  rapid:    { name:'Rapid',     color:'#00e5ff', cost:80,  dmg:10,  range:3,   rate:3.5,  splash:0,   burnDps:0,  burnDur:0, desc:'Blazing fire rate' },
-  splash:   { name:'Splash',    color:'#a5d6a7', cost:100, dmg:40,  range:2.5, rate:0.7,  splash:1.5, burnDps:0,  burnDur:0, desc:'Instant AoE'      },
-  sniper:   { name:'Sniper',    color:'#ef9a9a', cost:125, dmg:85,  range:7.5, rate:0.5,  splash:0,   burnDps:0,  burnDur:0, desc:'Extreme range'    },
-  fire:     { name:'Fire',      color:'#ff7043', cost:175, dmg:25,  range:3.5, rate:0.9,  splash:1.2, burnDps:15, burnDur:3, desc:'Burns + splash'   },
-  boomerang:{ name:'Boomerang', color:'#aed581', cost:250, dmg:65,  range:4.5, rate:0.65, splash:0,   burnDps:0,  burnDur:0, desc:'Chains 3 targets' },
-  bazooka:  { name:'Bazooka',   color:'#90a4ae', cost:350, dmg:160, range:5,   rate:0.35, splash:2.8, burnDps:0,  burnDur:0, desc:'Huge explosion'   },
-  nuke:     { name:'Nuke',      color:'#ce93d8', cost:600, dmg:450, range:5.5, rate:0.1,  splash:6,   burnDps:0,  burnDur:0, desc:'Catastrophic AoE' },
+  basic:  { name:'Basic',  color:'#4fc3f7', cost:50,   dmg:20,  range:3,   rate:1.56, splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Fast & cheap'      },
+  rapid:  { name:'Rapid',  color:'#00e5ff', cost:80,   dmg:10,  range:3,   rate:3.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Blazing fire rate'  },
+  splash: { name:'Splash', color:'#a5d6a7', cost:100,  dmg:40,  range:2.5, rate:0.7,  splash:1.5, burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Instant AoE'        },
+  sniper: { name:'Sniper', color:'#ef9a9a', cost:125,  dmg:85,  range:7.5, rate:0.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Extreme range'      },
+  fire:   { name:'Fire',   color:'#ff7043', cost:175,  dmg:25,  range:3.5, rate:0.9,  splash:1.2, burnDps:15, burnDur:3, slowMult:0, slowDur:0, desc:'Burns + splash'     },
+  cryo:   { name:'Cryo',   color:'#81d4fa', cost:250,  dmg:20,  range:3.5, rate:0.75, splash:1.5, burnDps:0,  burnDur:0, slowMult:0.3, slowDur:3, desc:'Slows to 30% speed'},
+  nuke:   { name:'Nuke',   color:'#ce93d8', cost:600,  dmg:450, range:5.5, rate:0.1,  splash:6,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Catastrophic AoE'  },
+  tesla:  { name:'Tesla',  color:'#fff176', cost:2000, dmg:70,  range:4.5, rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Zaps ALL in range'  },
 };
 
 let state = createState();
@@ -66,7 +64,7 @@ function createState() {
     towers: [], enemies: [], projectiles: [], particles: [],
     hoverCell: null, hoveredTower: null,
     gameOver: false, lastTime: 0,
-    screenFlash: 0, screenShake: 0,
+    screenFlash: 0,
   };
 }
 
@@ -88,6 +86,7 @@ function spawnEnemy() {
     gold: Math.ceil(hp / 10), r: 10,
     dead: false, reached: false, flash: 0,
     burnDps: 0, burnTimer: 0,
+    slowMult: 1.0, slowTimer: 0,
   });
 }
 
@@ -96,6 +95,11 @@ function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 function applyBurn(e, dps, duration) {
   if (dps > e.burnDps) e.burnDps = dps;
   if (duration > e.burnTimer) e.burnTimer = duration;
+}
+
+function applySlow(e, mult, duration) {
+  e.slowMult = Math.min(e.slowMult || 1.0, mult);
+  if (duration > e.slowTimer) e.slowTimer = duration;
 }
 
 function damageEnemy(e, dmg) {
@@ -113,38 +117,11 @@ function damageEnemy(e, dmg) {
   }
 }
 
-function nukeDetonate(ex, ey, splashR, dmg, color) {
-  for (const e of state.enemies) {
-    if (!e.dead && !e.reached && dist({x:ex,y:ey}, e) <= splashR) damageEnemy(e, dmg);
-  }
-  state.screenFlash = 0.55;
-  state.screenShake = 0.8;
-  for (let i = 1; i <= 3; i++) {
-    state.particles.push({ type:'ring', x:ex, y:ey, r:0, maxR:splashR*i/3, life:0.55, maxLife:0.55, color });
-  }
-  for (let i = 0; i < 18; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const spd = 100 + Math.random() * 200;
-    state.particles.push({ type:'spark', x:ex, y:ey, vx:Math.cos(angle)*spd, vy:Math.sin(angle)*spd, life:0.8, maxLife:0.8, color:'#e1bee7', r:5 });
-  }
-}
-
-function splashDetonate(ex, ey, splashR, dmg, color, applyBurnEffect, def) {
-  for (const e of state.enemies) {
-    if (!e.dead && !e.reached && dist({x:ex,y:ey}, e) <= splashR) {
-      damageEnemy(e, dmg);
-      if (applyBurnEffect) applyBurn(e, def.burnDps, def.burnDur);
-    }
-  }
-  state.particles.push({ type:'ring', x:ex, y:ey, r:0, maxR:splashR, life:0.35, maxLife:0.35, color });
-}
-
 // ─── Update ──────────────────────────────────────────────────────────────────
 
 function update(dt) {
   if (state.gameOver) return;
 
-  if (state.screenShake > 0) state.screenShake = Math.max(0, state.screenShake - dt * 5);
   if (state.screenFlash > 0) state.screenFlash = Math.max(0, state.screenFlash - dt * 2.5);
 
   // Spawn
@@ -157,18 +134,25 @@ function update(dt) {
     }
   }
 
-  // Move + burn enemies
+  // Move + status enemies
   for (const e of state.enemies) {
     if (e.dead || e.reached) continue;
+
     if (e.burnTimer > 0) {
       e.burnTimer -= dt;
       damageEnemy(e, e.burnDps * dt);
       if (e.burnTimer <= 0) { e.burnDps = 0; e.burnTimer = 0; }
       if (e.dead) continue;
     }
+    if (e.slowTimer > 0) {
+      e.slowTimer -= dt;
+      if (e.slowTimer <= 0) { e.slowMult = 1.0; e.slowTimer = 0; }
+    }
+
     const target = WAYPOINTS[e.wpIdx];
     const d = dist(e, target);
-    const step = e.speed * dt;
+    const effectiveSpeed = e.speed * (e.slowTimer > 0 ? e.slowMult : 1.0);
+    const step = effectiveSpeed * dt;
     if (d <= step) {
       e.x = target.x; e.y = target.y;
       e.wpIdx++;
@@ -191,13 +175,27 @@ function update(dt) {
     const def = TOWER_TYPES[t.type];
     const rangePixels = def.range * CELL;
 
+    // Tesla: zap ALL enemies in range at once — no targeting needed
+    if (t.type === 'tesla') {
+      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= rangePixels);
+      if (inRange.length === 0) continue;
+      t.cooldown = 1 / def.rate;
+      for (const e of inRange) {
+        damageEnemy(e, def.dmg);
+        // Arc lightning particle
+        state.particles.push({ type:'arc', x1:t.x, y1:t.y, x2:e.x, y2:e.y, life:0.1, maxLife:0.1, color:def.color });
+        state.particles.push({ type:'spark', x:e.x, y:e.y, vx:0, vy:0, life:0.12, maxLife:0.12, color:def.color, r:7 });
+      }
+      continue;
+    }
+
+    // All other towers: find best target
     let target = null, bestWp = -1;
     for (const e of state.enemies) {
       if (e.dead || e.reached) continue;
       if (dist(t, e) <= rangePixels && e.wpIdx > bestWp) { target = e; bestWp = e.wpIdx; }
     }
     if (!target) continue;
-
     t.cooldown = 1 / def.rate;
     t.aimAngle = Math.atan2(target.y - t.y, target.x - t.x);
 
@@ -208,29 +206,32 @@ function update(dt) {
         if (!e.dead && !e.reached && dist({x:target.x,y:target.y}, e) <= splashR) damageEnemy(e, def.dmg);
       }
       state.particles.push({ type:'ring', x:target.x, y:target.y, r:0, maxR:splashR, life:0.3, maxLife:0.3, color:def.color });
-    } else if (t.type === 'boomerang') {
-      // Chain projectile
+    } else if (t.type === 'nuke') {
+      // Slow missile that detonates
       state.projectiles.push({
-        ptype:'chain', x:t.x, y:t.y, tx:target.x, ty:target.y, target,
-        dmg:def.dmg, speed:350, color:def.color, r:6,
-        chainLeft:2, chainRange:4.5*CELL, hitSet:new Set([target]), hit:false,
+        ptype:'nuke', x:t.x, y:t.y, tx:target.x, ty:target.y, target,
+        dmg:def.dmg, splashR:def.splash*CELL, speed:140, color:def.color, r:9, hit:false,
       });
-    } else if (def.splash > 0) {
-      // Splash projectile (fire, bazooka, nuke)
-      const projSpeed = t.type === 'nuke' ? 140 : 260;
-      const projR = t.type === 'nuke' ? 9 : t.type === 'bazooka' ? 6 : 5;
+    } else if (t.type === 'cryo') {
+      // Ice projectile → splash slow
       state.projectiles.push({
-        ptype:'splash', x:t.x, y:t.y, tx:target.x, ty:target.y, target,
-        dmg:def.dmg, splashR:def.splash*CELL, speed:projSpeed, color:def.color, r:projR,
-        towerType:t.type, burnDef: def.burnDps > 0 ? def : null, hit:false,
+        ptype:'cryo', x:t.x, y:t.y, tx:target.x, ty:target.y, target,
+        dmg:def.dmg, splashR:def.splash*CELL, speed:280, color:def.color, r:6,
+        slowMult:def.slowMult, slowDur:def.slowDur, hit:false,
+      });
+    } else if (t.type === 'fire') {
+      // Fire splash projectile
+      state.projectiles.push({
+        ptype:'fire', x:t.x, y:t.y, tx:target.x, ty:target.y, target,
+        dmg:def.dmg, splashR:def.splash*CELL, speed:260, color:def.color, r:5,
+        burnDps:def.burnDps, burnDur:def.burnDur, hit:false,
       });
     } else {
       // Single target (basic, rapid, sniper)
       const projSpeed = t.type === 'rapid' ? 400 : t.type === 'sniper' ? 500 : 300;
       state.projectiles.push({
         ptype:'single', x:t.x, y:t.y, tx:target.x, ty:target.y, target,
-        dmg:def.dmg, speed:projSpeed, color:def.color,
-        r: t.type === 'rapid' ? 3 : 4, hit:false,
+        dmg:def.dmg, speed:projSpeed, color:def.color, r:t.type==='rapid'?3:4, hit:false,
       });
     }
   }
@@ -238,10 +239,7 @@ function update(dt) {
   // Move projectiles
   for (const p of state.projectiles) {
     if (p.hit) continue;
-    // Track living targets
-    if (p.target && !p.target.dead && !p.target.reached) {
-      p.tx = p.target.x; p.ty = p.target.y;
-    }
+    if (p.target && !p.target.dead && !p.target.reached) { p.tx = p.target.x; p.ty = p.target.y; }
     const d = dist(p, {x:p.tx, y:p.ty});
     const step = p.speed * dt;
     const targetGone = !p.target || p.target.dead || p.target.reached;
@@ -250,35 +248,42 @@ function update(dt) {
       if (p.ptype === 'single') {
         if (!targetGone) damageEnemy(p.target, p.dmg);
         p.hit = true;
-      } else if (p.ptype === 'splash') {
+      } else {
         const ex = !targetGone ? p.target.x : p.tx;
         const ey = !targetGone ? p.target.y : p.ty;
-        if (p.towerType === 'nuke') {
-          nukeDetonate(ex, ey, p.splashR, p.dmg, p.color);
-        } else {
-          splashDetonate(ex, ey, p.splashR, p.dmg, p.color, !!p.burnDef, p.burnDef);
-        }
-        p.hit = true;
-      } else if (p.ptype === 'chain') {
-        const hx = p.x, hy = p.y;
-        if (!targetGone) { damageEnemy(p.target, p.dmg); p.hitSet.add(p.target); }
-        if (p.chainLeft > 0) {
-          let next = null, minD = p.chainRange;
+        if (p.ptype === 'nuke') {
           for (const e of state.enemies) {
-            if (!e.dead && !e.reached && !p.hitSet.has(e)) {
-              const dd = dist({x:hx,y:hy}, e);
-              if (dd < minD) { minD = dd; next = e; }
+            if (!e.dead && !e.reached && dist({x:ex,y:ey}, e) <= p.splashR) damageEnemy(e, p.dmg);
+          }
+          state.screenFlash = 0.5;
+          for (let i = 1; i <= 3; i++)
+            state.particles.push({ type:'ring', x:ex, y:ey, r:0, maxR:p.splashR*i/3, life:0.55, maxLife:0.55, color:p.color });
+          for (let i = 0; i < 18; i++) {
+            const angle = Math.random() * Math.PI * 2, spd = 100 + Math.random() * 200;
+            state.particles.push({ type:'spark', x:ex, y:ey, vx:Math.cos(angle)*spd, vy:Math.sin(angle)*spd, life:0.8, maxLife:0.8, color:'#e1bee7', r:5 });
+          }
+        } else if (p.ptype === 'cryo') {
+          for (const e of state.enemies) {
+            if (!e.dead && !e.reached && dist({x:ex,y:ey}, e) <= p.splashR) {
+              damageEnemy(e, p.dmg);
+              applySlow(e, p.slowMult, p.slowDur);
             }
           }
-          if (next) {
-            p.hitSet.add(next);
-            p.x = hx; p.y = hy;
-            p.target = next; p.tx = next.x; p.ty = next.y;
-            p.chainLeft--;
-            // Chain spark
-            state.particles.push({ type:'spark', x:hx, y:hy, vx:0, vy:0, life:0.1, maxLife:0.1, color:p.color, r:8 });
-          } else { p.hit = true; }
-        } else { p.hit = true; }
+          state.particles.push({ type:'ring', x:ex, y:ey, r:0, maxR:p.splashR, life:0.4, maxLife:0.4, color:p.color });
+          for (let i = 0; i < 8; i++) {
+            const angle = Math.random() * Math.PI * 2, spd = 30 + Math.random() * 50;
+            state.particles.push({ type:'spark', x:ex, y:ey, vx:Math.cos(angle)*spd, vy:Math.sin(angle)*spd, life:0.5, maxLife:0.5, color:'#e1f5fe', r:4 });
+          }
+        } else if (p.ptype === 'fire') {
+          for (const e of state.enemies) {
+            if (!e.dead && !e.reached && dist({x:ex,y:ey}, e) <= p.splashR) {
+              damageEnemy(e, p.dmg);
+              applyBurn(e, p.burnDps, p.burnDur);
+            }
+          }
+          state.particles.push({ type:'ring', x:ex, y:ey, r:0, maxR:p.splashR, life:0.35, maxLife:0.35, color:p.color });
+        }
+        p.hit = true;
       }
     } else {
       const nx = (p.tx - p.x) / d, ny = (p.ty - p.y) / d;
@@ -306,15 +311,6 @@ function update(dt) {
 
 function draw() {
   ctx.clearRect(0, 0, CW, CH);
-
-  let shakeX = 0, shakeY = 0;
-  if (state.screenShake > 0) {
-    shakeX = (Math.random() - 0.5) * state.screenShake * 7;
-    shakeY = (Math.random() - 0.5) * state.screenShake * 7;
-    ctx.save();
-    ctx.translate(shakeX, shakeY);
-  }
-
   drawBackground();
   drawPath();
   drawGrid();
@@ -327,11 +323,8 @@ function draw() {
   if (state.hoveredTower) drawRangeCircle(state.hoveredTower);
   if (state.hoverCell && !state.gameOver) drawPlacementPreview();
   if (state.gameOver) drawGameOver();
-
-  if (state.screenShake > 0) ctx.restore();
-
   if (state.screenFlash > 0) {
-    ctx.globalAlpha = state.screenFlash * 0.55;
+    ctx.globalAlpha = state.screenFlash * 0.5;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, CW, CH);
     ctx.globalAlpha = 1;
@@ -349,10 +342,10 @@ function drawBackground() {
 
 function drawPath() {
   ctx.fillStyle = '#5d4037';
-  for (const [c, r] of FINAL_PATH) ctx.fillRect(c*CELL+1, r*CELL+TOP_H+1, CELL-2, CELL-2);
+  for (const [c,r] of FINAL_PATH) ctx.fillRect(c*CELL+1, r*CELL+TOP_H+1, CELL-2, CELL-2);
   ctx.strokeStyle = '#795548';
   ctx.lineWidth = 1;
-  for (const [c, r] of FINAL_PATH) ctx.strokeRect(c*CELL+1, r*CELL+TOP_H+1, CELL-2, CELL-2);
+  for (const [c,r] of FINAL_PATH) ctx.strokeRect(c*CELL+1, r*CELL+TOP_H+1, CELL-2, CELL-2);
 }
 
 function drawGrid() {
@@ -373,37 +366,56 @@ function drawGrid() {
   ctx.fillText('END', last.x, last.y + 4);
 }
 
-function drawTowerBody(tx, ty, type) {
-  const def = TOWER_TYPES[type];
-  ctx.fillStyle = '#37474f';
-  ctx.fillRect(tx - 16, ty - 16, 32, 32);
-  ctx.fillStyle = def.color;
-  ctx.fillRect(tx - 12, ty - 12, 24, 24);
-}
-
 function drawTowers() {
   const now = Date.now();
   for (const t of state.towers) {
     const def = TOWER_TYPES[t.type];
-    drawTowerBody(t.x, t.y, t.type);
+    // Base + body
+    ctx.fillStyle = '#37474f';
+    ctx.fillRect(t.x - 16, t.y - 16, 32, 32);
+    ctx.fillStyle = def.color;
+    ctx.fillRect(t.x - 12, t.y - 12, 24, 24);
 
-    // Cooldown ring
+    // Cooldown arc
     const maxCd = 1 / def.rate;
     if (t.cooldown > 0) {
       const prog = 1 - t.cooldown / maxCd;
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.28)';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(t.x, t.y, 17, -Math.PI/2, -Math.PI/2 + prog * Math.PI * 2);
       ctx.stroke();
     }
 
-    if (t.type === 'boomerang') {
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 3;
+    if (t.type === 'tesla') {
+      // Pulsing electric ring
+      const pulse = 0.4 + 0.35 * Math.sin(now / 120 + t.x * 0.1);
+      ctx.strokeStyle = `rgba(255,241,118,${pulse})`;
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(t.x + Math.cos(t.aimAngle)*4, t.y + Math.sin(t.aimAngle)*4, 11, t.aimAngle-1.1, t.aimAngle+1.1);
+      ctx.arc(t.x, t.y, 14 + 3 * Math.sin(now / 80), 0, Math.PI * 2);
       ctx.stroke();
+      // Crosshair
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(t.x - 6, t.y); ctx.lineTo(t.x + 6, t.y);
+      ctx.moveTo(t.x, t.y - 6); ctx.lineTo(t.x, t.y + 6);
+      ctx.stroke();
+      continue;
+    }
+
+    if (t.type === 'cryo') {
+      // Snowflake arms
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < 6; i++) {
+        const angle = (i / 6) * Math.PI * 2 + now * 0.001;
+        ctx.beginPath();
+        ctx.moveTo(t.x, t.y);
+        ctx.lineTo(t.x + Math.cos(angle) * 12, t.y + Math.sin(angle) * 12);
+        ctx.stroke();
+      }
       continue;
     }
 
@@ -415,6 +427,14 @@ function drawTowers() {
       ctx.arc(t.x, t.y - 7, 5, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = 1;
+    }
+
+    if (t.type === 'nuke') {
+      ctx.strokeStyle = 'rgba(206,147,216,0.45)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 14, 0, Math.PI * 2);
+      ctx.stroke();
     }
 
     ctx.save();
@@ -431,31 +451,21 @@ function drawTowers() {
       ctx.beginPath();
       ctx.moveTo(18,-5); ctx.lineTo(24,0); ctx.lineTo(18,5); ctx.closePath();
       ctx.fill();
-    } else if (t.type === 'bazooka') {
-      ctx.fillRect(2, -5, 20, 10);
-      ctx.fillStyle = '#607d8b';
-      ctx.fillRect(0, -3, 4, 6);
     } else {
       const blen = t.type === 'sniper' ? 22 : 14;
       const bh = t.type === 'sniper' ? 4 : 6;
       ctx.fillRect(2, -bh/2, blen, bh);
     }
     ctx.restore();
-
-    if (t.type === 'nuke') {
-      ctx.strokeStyle = 'rgba(206,147,216,0.5)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, 14, 0, Math.PI * 2);
-      ctx.stroke();
-    }
   }
 }
 
 function drawEnemies() {
   for (const e of state.enemies) {
-    // Burn glow
-    if (e.burnTimer > 0) {
+    const frozen = e.slowTimer > 0;
+    const burning = e.burnTimer > 0;
+
+    if (burning) {
       ctx.globalAlpha = 0.55;
       ctx.fillStyle = '#ff6e00';
       ctx.beginPath();
@@ -463,11 +473,20 @@ function drawEnemies() {
       ctx.fill();
       ctx.globalAlpha = 1;
     }
-    ctx.fillStyle = e.flash > 0 ? '#fff' : '#e53935';
+    if (frozen) {
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = '#81d4fa';
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.r + 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.fillStyle = e.flash > 0 ? '#fff' : (frozen ? '#b3e5fc' : '#e53935');
     ctx.beginPath();
     ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = '#b71c1c';
+    ctx.strokeStyle = frozen ? '#0288d1' : '#b71c1c';
     ctx.lineWidth = 2;
     ctx.stroke();
 
@@ -482,8 +501,7 @@ function drawEnemies() {
     ctx.arc(e.x + Math.cos(angle)*5, e.y + Math.sin(angle)*5, 1.5, 0, Math.PI * 2);
     ctx.fill();
 
-    const bw = 24, bh = 4;
-    const bx = e.x - bw/2, by = e.y - e.r - 8;
+    const bw = 24, bh = 4, bx = e.x - bw/2, by = e.y - e.r - 8;
     ctx.fillStyle = '#222';
     ctx.fillRect(bx, by, bw, bh);
     const pct = e.hp / e.maxHp;
@@ -495,21 +513,7 @@ function drawEnemies() {
 function drawProjectiles() {
   for (const p of state.projectiles) {
     if (p.hit) continue;
-    if (p.towerType === 'bazooka') {
-      // Missile shape
-      const angle = Math.atan2(p.ty - p.y, p.tx - p.x);
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(angle);
-      ctx.fillStyle = p.color;
-      ctx.fillRect(-4, -3, 12, 6);
-      ctx.fillStyle = '#ff5722';
-      ctx.beginPath();
-      ctx.moveTo(8,-3); ctx.lineTo(13,0); ctx.lineTo(8,3); ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    } else if (p.towerType === 'nuke') {
-      // Glowing orb
+    if (p.ptype === 'nuke') {
       ctx.globalAlpha = 0.3;
       ctx.fillStyle = p.color;
       ctx.beginPath();
@@ -520,6 +524,16 @@ function drawProjectiles() {
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
       ctx.fill();
+    } else if (p.ptype === 'cryo') {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.stroke();
     } else {
       ctx.fillStyle = p.color;
       ctx.beginPath();
@@ -531,17 +545,28 @@ function drawProjectiles() {
 
 function drawParticles() {
   for (const p of state.particles) {
-    ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = alpha;
     if (p.type === 'spark') {
       ctx.fillStyle = p.color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r * Math.max(0, p.life / p.maxLife), 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, p.r * alpha, 0, Math.PI * 2);
       ctx.fill();
     } else if (p.type === 'ring') {
       ctx.strokeStyle = p.color;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(p.x, p.y, Math.max(0, p.r), 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (p.type === 'arc') {
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 1.5 + alpha * 1.5;
+      ctx.beginPath();
+      // Jagged arc with midpoint wobble
+      const mx = (p.x1 + p.x2) / 2 + (Math.random() - 0.5) * 14;
+      const my = (p.y1 + p.y2) / 2 + (Math.random() - 0.5) * 14;
+      ctx.moveTo(p.x1, p.y1);
+      ctx.quadraticCurveTo(mx, my, p.x2, p.y2);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
@@ -612,31 +637,30 @@ function drawPanel() {
     const selected = state.selectedTower === key;
     const affordable = state.gold >= def.cost;
 
-    ctx.fillStyle = selected ? '#1a3a5c' : '#0d2137';
+    ctx.fillStyle = selected ? '#1a3a5c' : (key === 'tesla' ? '#1a1a10' : '#0d2137');
     ctx.fillRect(px + 6, ty, PANEL_W - 12, CARD_H);
-    ctx.strokeStyle = selected ? def.color : (affordable ? '#2e3f50' : '#1a2530');
-    ctx.lineWidth = selected ? 2 : 1;
+    ctx.strokeStyle = selected ? def.color : (key === 'tesla' ? '#4a4800' : (affordable ? '#2e3f50' : '#1a2530'));
+    ctx.lineWidth = selected ? 2 : (key === 'tesla' ? 1.5 : 1);
     ctx.strokeRect(px + 6, ty, PANEL_W - 12, CARD_H);
 
-    // Mini tower icon
     drawMiniTower(px + 28, ty + CARD_H/2, key, def);
 
     const tx2 = px + 54;
     ctx.fillStyle = affordable ? '#eceff1' : '#546e7a';
-    ctx.font = 'bold 12px monospace';
+    ctx.font = `bold 12px monospace`;
     ctx.textAlign = 'left';
     ctx.fillText(def.name, tx2, ty + 17);
 
-    ctx.fillStyle = affordable ? '#fff176' : '#546e7a';
+    ctx.fillStyle = key === 'tesla' ? '#fff176' : (affordable ? '#fff176' : '#546e7a');
     ctx.font = '11px monospace';
     ctx.fillText(`$${def.cost}`, tx2, ty + 30);
 
     ctx.fillStyle = '#78909c';
     ctx.font = '9px monospace';
-    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${def.rate.toFixed(1)}/s`, tx2, ty + 43);
+    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${def.rate}/s`, tx2, ty + 43);
 
-    ctx.fillStyle = key === 'nuke' ? '#ce93d8' : key === 'bazooka' ? '#90a4ae' : key === 'boomerang' ? '#aed581' : key === 'fire' ? '#ff7043' : '#80cbc4';
-    ctx.font = '9px monospace';
+    const descColor = { tesla:'#fff176', nuke:'#ce93d8', cryo:'#81d4fa', fire:'#ff7043' }[key] || '#80cbc4';
+    ctx.fillStyle = descColor;
     ctx.fillText(def.desc, tx2, ty + 57);
 
     ty += CARD_H + CARD_GAP;
@@ -655,30 +679,44 @@ function drawMiniTower(cx, cy, type, def) {
   ctx.fillRect(cx - 10, cy - 8, 20, 16);
   ctx.fillStyle = '#263238';
   if (type === 'rapid') {
-    ctx.fillRect(cx + 2, cy - 6, 11, 3);
-    ctx.fillRect(cx + 2, cy + 3, 11, 3);
-  } else if (type === 'boomerang') {
-    ctx.restore && 0;
+    ctx.fillRect(cx+2, cy-6, 11, 3);
+    ctx.fillRect(cx+2, cy+3, 11, 3);
+  } else if (type === 'tesla') {
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(cx + 3, cy, 8, -1.0, 1.0);
+    ctx.moveTo(cx-6,cy); ctx.lineTo(cx+6,cy);
+    ctx.moveTo(cx,cy-6); ctx.lineTo(cx,cy+6);
     ctx.stroke();
+    ctx.strokeStyle = def.color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 10, 0, Math.PI*2);
+    ctx.stroke();
+  } else if (type === 'cryo') {
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 6; i++) {
+      const a = (i/6)*Math.PI*2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a)*10, cy + Math.sin(a)*10);
+      ctx.stroke();
+    }
   } else if (type === 'nuke') {
-    ctx.fillRect(cx + 2, cy - 4, 14, 8);
+    ctx.fillRect(cx+2, cy-4, 14, 8);
     ctx.fillStyle = '#ff5722';
     ctx.beginPath();
     ctx.moveTo(cx+16,cy-4); ctx.lineTo(cx+20,cy); ctx.lineTo(cx+16,cy+4); ctx.closePath();
     ctx.fill();
   } else if (type === 'fire') {
-    ctx.fillRect(cx + 2, cy - 3, 12, 6);
+    ctx.fillRect(cx+2, cy-3, 12, 6);
     ctx.fillStyle = '#ffcc02';
     ctx.beginPath();
-    ctx.arc(cx, cy - 8, 3, 0, Math.PI * 2);
+    ctx.arc(cx, cy-8, 3, 0, Math.PI*2);
     ctx.fill();
   } else {
-    const blen = type === 'sniper' ? 16 : type === 'bazooka' ? 14 : 11;
-    ctx.fillRect(cx + 2, cy - 3, blen, 6);
+    const blen = type === 'sniper' ? 16 : 11;
+    ctx.fillRect(cx+2, cy-3, blen, 6);
   }
 }
 
@@ -705,10 +743,10 @@ function drawPlacementPreview() {
   const affordable = state.gold >= def.cost;
   ctx.globalAlpha = 0.35;
   ctx.fillStyle = affordable ? def.color : '#f44336';
-  ctx.fillRect(c * CELL, r * CELL + TOP_H, CELL, CELL);
+  ctx.fillRect(c*CELL, r*CELL+TOP_H, CELL, CELL);
   ctx.globalAlpha = 1;
   if (affordable) {
-    const cx = c * CELL + CELL/2, cy = r * CELL + TOP_H + CELL/2;
+    const cx = c*CELL+CELL/2, cy = r*CELL+TOP_H+CELL/2;
     ctx.globalAlpha = 0.1;
     ctx.fillStyle = def.color;
     ctx.beginPath();
@@ -729,10 +767,10 @@ function drawGameOver() {
   ctx.fillRect(0, 0, CW, CH);
   const mx = CW/2, my = CH/2;
   ctx.fillStyle = '#1a237e';
-  ctx.fillRect(mx - 170, my - 105, 340, 210);
+  ctx.fillRect(mx-170, my-105, 340, 210);
   ctx.strokeStyle = '#ef5350';
   ctx.lineWidth = 3;
-  ctx.strokeRect(mx - 170, my - 105, 340, 210);
+  ctx.strokeRect(mx-170, my-105, 340, 210);
   ctx.fillStyle = '#ef5350';
   ctx.font = 'bold 32px monospace';
   ctx.textAlign = 'center';
@@ -740,7 +778,7 @@ function drawGameOver() {
   ctx.fillStyle = '#90caf9';
   ctx.font = '18px monospace';
   ctx.fillText(`Survived ${state.wave} wave${state.wave !== 1 ? 's' : ''}`, mx, my);
-  drawButton(mx - 75, my + 30, 150, 44, 'RESTART', '#1b5e20', '#4caf50');
+  drawButton(mx-75, my+30, 150, 44, 'RESTART', '#1b5e20', '#4caf50');
 }
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -750,9 +788,8 @@ function hasTower(c, r) { return state.towers.some(t => t.c === c && t.r === r);
 canvas.addEventListener('mousemove', ev => {
   const rect = canvas.getBoundingClientRect();
   const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
-  if (my >= TOP_H && mx < COLS * CELL) {
-    state.hoverCell = { c: Math.floor(mx/CELL), r: Math.floor((my-TOP_H)/CELL) };
-  } else { state.hoverCell = null; }
+  state.hoverCell = (my >= TOP_H && mx < COLS*CELL)
+    ? { c: Math.floor(mx/CELL), r: Math.floor((my-TOP_H)/CELL) } : null;
   state.hoveredTower = null;
   for (const t of state.towers) {
     if (Math.abs(mx-t.x) < CELL/2 && Math.abs(my-t.y) < CELL/2) { state.hoveredTower = t; break; }
@@ -766,32 +803,24 @@ canvas.addEventListener('click', ev => {
   const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
 
   if (state.gameOver) {
-    const bx = CW/2-75, by = CH/2+30;
-    if (mx>=bx && mx<=bx+150 && my>=by && my<=by+44) state = createState();
+    if (mx >= CW/2-75 && mx <= CW/2+75 && my >= CH/2+30 && my <= CH/2+74) state = createState();
     return;
   }
-
-  // Speed toggle
-  if (mx >= CW-68 && mx <= CW-10 && my >= 8 && my <= 42) {
-    state.speed = state.speed === 1 ? 2 : 1; return;
-  }
-  // Start wave
+  if (mx >= CW-68 && mx <= CW-10 && my >= 8 && my <= 42) { state.speed = state.speed===1?2:1; return; }
   const wbx = COLS*CELL - 145;
   if (mx >= wbx && mx <= wbx+135 && my >= 8 && my <= 42) { startWave(); return; }
 
-  // Tower panel
   const px = COLS * CELL;
-  if (mx >= px && mx < px + PANEL_W && my >= TOP_H) {
+  if (mx >= px && mx < px+PANEL_W && my >= TOP_H) {
     let ty = TOP_H + PANEL_HEADER;
     for (const key of Object.keys(TOWER_TYPES)) {
-      if (my >= ty && my < ty + CARD_H) { state.selectedTower = key; return; }
+      if (my >= ty && my < ty+CARD_H) { state.selectedTower = key; return; }
       ty += CARD_H + CARD_GAP;
     }
     return;
   }
 
-  // Place tower
-  if (my >= TOP_H && mx < COLS * CELL) {
+  if (my >= TOP_H && mx < COLS*CELL) {
     const c = Math.floor(mx/CELL), r = Math.floor((my-TOP_H)/CELL);
     if (PATH_SET.has(`${c},${r}`) || hasTower(c, r)) return;
     const def = TOWER_TYPES[state.selectedTower];
