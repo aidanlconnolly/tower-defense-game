@@ -837,6 +837,26 @@ function drawPanel() {
   ctx.font = '9px monospace';
   ctx.textAlign = 'center';
   ctx.fillText('Click grid to place · hover = range', px + PANEL_W/2, ty + 14);
+
+  // Upgrade callout box
+  const bx = px + 6, by = ty + 26, bw = PANEL_W - 12, bh = 58;
+  ctx.fillStyle = '#0a1520';
+  ctx.fillRect(bx, by, bw, bh);
+  ctx.strokeStyle = '#2a3a4a';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(bx, by, bw, bh);
+
+  ctx.font = 'bold 10px monospace';
+  ctx.fillStyle = '#90caf9';
+  ctx.fillText('UPGRADES AVAILABLE', px + PANEL_W/2, by + 13);
+
+  ctx.font = '9px monospace';
+  ctx.fillStyle = '#ce93d8';
+  ctx.fillText('☀ Hover Nuke → Sun God', px + PANEL_W/2, by + 27);
+  ctx.fillStyle = '#ff6659';
+  ctx.fillText('⚡ Hover Tesla → Death Ray', px + PANEL_W/2, by + 39);
+  ctx.fillStyle = '#00e5ff';
+  ctx.fillText('❄ Hover Cryo → Permafrost', px + PANEL_W/2, by + 51);
 }
 
 function drawMiniTower(cx, cy, type, def) {
