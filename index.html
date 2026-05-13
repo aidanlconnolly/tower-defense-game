@@ -74,7 +74,7 @@ const TOWER_TYPES = {
   tesla:  { name:'Tesla',  color:'#fff176', cost:2000, dmg:70,  range:4.5, rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Zaps ALL in range'  },
 };
 
-const SUNGOD     = { cost:100000,  dmg:350,  rate:2.5, range:10,  color:'#ffd700' };
+const SUNGOD     = { cost:100000,  dmg:350,  rate:1.2, range:10,  color:'#ffd700' };
 const DEATHRAY   = { cost:1000000, dps:900,  range:8,             color:'#ff1744' };
 const PERMAFROST = { cost:300000,  dps:50,   range:4.5, slowMult:0.1, color:'#00e5ff' };
 
@@ -265,9 +265,9 @@ function update(dt) {
       t.cooldown = 1 / SUNGOD.rate;
       for (const e of inRange) {
         damageEnemy(e, SUNGOD.dmg);
-        state.particles.push({ type:'arc', x1:t.x, y1:t.y, x2:e.x, y2:e.y, life:0.18, maxLife:0.18, color:SUNGOD.color });
+        state.particles.push({ type:'arc', x1:t.x, y1:t.y, x2:e.x, y2:e.y, life:0.08, maxLife:0.08, color:'rgba(255,215,0,0.55)' });
       }
-      state.particles.push({ type:'ring', x:t.x, y:t.y, r:0, maxR:sgRange, life:0.25, maxLife:0.25, color:SUNGOD.color });
+      state.particles.push({ type:'ring', x:t.x, y:t.y, r:0, maxR:sgRange, life:0.18, maxLife:0.18, color:'rgba(255,215,0,0.45)' });
       continue;
     }
 
@@ -478,7 +478,7 @@ function drawTowers() {
 
     if (t.upgrade === 'sungod') {
       const pulse = 0.5 + 0.3 * Math.sin(now / 200 + t.x * 0.05);
-      ctx.globalAlpha = pulse * 0.4;
+      ctx.globalAlpha = pulse * 0.22;
       ctx.fillStyle = SUNGOD.color;
       ctx.beginPath(); ctx.arc(t.x, t.y, 26, 0, Math.PI*2); ctx.fill();
       ctx.globalAlpha = 1;
