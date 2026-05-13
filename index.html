@@ -66,7 +66,6 @@ setMap(0);
 
 const TOWER_TYPES = {
   basic:  { name:'Basic',  color:'#4fc3f7', cost:50,   dmg:20,  range:3,   rate:1.56, splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Fast & cheap'      },
-  rapid:  { name:'Rapid',  color:'#00e5ff', cost:80,   dmg:10,  range:3,   rate:3.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Blazing fire rate'  },
   sniper: { name:'Sniper', color:'#ef9a9a', cost:125,  dmg:85,  range:7.5, rate:0.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Extreme range'      },
   fire:   { name:'Fire',   color:'#ff7043', cost:175,  dmg:25,  range:3.5, rate:0.9,  splash:1.2, burnDps:15, burnDur:3, slowMult:0, slowDur:0, desc:'Burns + splash'     },
   cryo:   { name:'Cryo',   color:'#81d4fa', cost:250,  dmg:20,  range:3.5, rate:0.75, splash:1.5, burnDps:0,  burnDur:0, slowMult:0.3, slowDur:3, desc:'Slows to 30% speed'},
@@ -323,11 +322,11 @@ function update(dt) {
         burnDps:def.burnDps, burnDur:def.burnDur, hit:false,
       });
     } else {
-      // Single target (basic, rapid, sniper)
-      const projSpeed = t.type === 'rapid' ? 400 : t.type === 'sniper' ? 500 : 300;
+      // Single target (basic, sniper)
+      const projSpeed = t.type === 'sniper' ? 500 : 300;
       state.projectiles.push({
         ptype:'single', x:t.x, y:t.y, tx:target.x, ty:target.y, target,
-        dmg:def.dmg, speed:projSpeed, color:def.color, r:t.type==='rapid'?3:4, hit:false,
+        dmg:def.dmg, speed:projSpeed, color:def.color, r:4, hit:false,
       });
     }
   }
@@ -602,10 +601,7 @@ function drawTowers() {
     ctx.translate(t.x, t.y);
     ctx.rotate(t.aimAngle || 0);
     ctx.fillStyle = '#263238';
-    if (t.type === 'rapid') {
-      ctx.fillRect(2, -6, 13, 4);
-      ctx.fillRect(2, 2, 13, 4);
-    } else if (t.type === 'nuke') {
+    if (t.type === 'nuke') {
       ctx.fillStyle = '#b0bec5';
       ctx.fillRect(2, -5, 16, 10);
       ctx.fillStyle = '#ff5722';
@@ -849,10 +845,7 @@ function drawMiniTower(cx, cy, type, def) {
   ctx.fillStyle = def.color;
   ctx.fillRect(cx - 10, cy - 8, 20, 16);
   ctx.fillStyle = '#263238';
-  if (type === 'rapid') {
-    ctx.fillRect(cx+2, cy-6, 11, 3);
-    ctx.fillRect(cx+2, cy+3, 11, 3);
-  } else if (type === 'tesla') {
+  if (type === 'tesla') {
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
