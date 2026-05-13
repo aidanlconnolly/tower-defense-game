@@ -74,7 +74,9 @@ const TOWER_TYPES = {
   tesla:  { name:'Tesla',  color:'#fff176', cost:2000, dmg:70,  range:4.5, rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Zaps ALL in range'  },
 };
 
-const SUNGOD = { cost:50000, dmg:700, rate:2.5, range:30, color:'#ffd700' };
+const SUNGOD     = { cost:100000,  dmg:350,  rate:2.5, range:10,  color:'#ffd700' };
+const DEATHRAY   = { cost:1000000, dps:900,  range:8,             color:'#ff1744' };
+const PERMAFROST = { cost:300000,  dps:50,   range:4.5, slowMult:0.1, color:'#00e5ff' };
 
 let state = createState();
 
@@ -82,6 +84,7 @@ function createState() {
   return {
     gold: 200, lives: 20, wave: 0,
     waveActive: false, waveSpawned: 0, waveTotal: 0, spawnTimer: 0,
+    waveHasBoss: false, bossSpawned: false,
     speed: 1, selectedTower: 'basic',
     towers: [], enemies: [], projectiles: [], particles: [],
     hoverCell: null, hoveredTower: null,
@@ -94,21 +97,33 @@ function startWave() {
   state.wave++;
   state.waveActive = true;
   state.waveSpawned = 0;
+  state.waveHasBoss = (state.wave % 5 === 0);
+  state.bossSpawned = false;
   state.waveTotal = 6 + state.wave * 2;
   state.spawnTimer = 0;
 }
 
-function spawnEnemy() {
+function spawnEnemy(isBoss) {
   const hp = Math.round(60 * Math.pow(1.35, state.wave - 1));
   const speed = 55 + state.wave * 3;
-  state.enemies.push({
-    x: WAYPOINTS[0].x, y: WAYPOINTS[0].y,
-    wpIdx: 0, hp, maxHp: hp, speed,
-    gold: Math.ceil(hp / 10), r: 10,
-    dead: false, reached: false, flash: 0,
-    burnDps: 0, burnTimer: 0,
-    slowMult: 1.0, slowTimer: 0,
-  });
+  if (isBoss) {
+    const bossHp = hp * 15;
+    state.enemies.push({
+      x: WAYPOINTS[0].x, y: WAYPOINTS[0].y,
+      wpIdx: 0, hp: bossHp, maxHp: bossHp, speed: speed * 0.6,
+      gold: Math.ceil(bossHp / 5), r: 22,
+      dead: false, reached: false, flash: 0,
+      burnDps: 0, burnTimer: 0, slowMult: 1.0, slowTimer: 0, isBoss: true,
+    });
+  } else {
+    state.enemies.push({
+      x: WAYPOINTS[0].x, y: WAYPOINTS[0].y,
+      wpIdx: 0, hp, maxHp: hp, speed,
+      gold: Math.ceil(hp / 10), r: 10,
+      dead: false, reached: false, flash: 0,
+      burnDps: 0, burnTimer: 0, slowMult: 1.0, slowTimer: 0,
+    });
+  }
 }
 
 function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
@@ -121,6 +136,20 @@ function applyBurn(e, dps, duration) {
 function applySlow(e, mult, duration) {
   e.slowMult = Math.min(e.slowMult || 1.0, mult);
   if (duration > e.slowTimer) e.slowTimer = duration;
+}
+
+function damageEnemyContinuous(e, dmg) {
+  if (e.dead) return;
+  e.hp -= dmg;
+  if (e.hp <= 0) {
+    e.dead = true;
+    state.gold += e.gold;
+    for (let i = 0; i < 6; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 50 + Math.random() * 70;
+      state.particles.push({ type:'spark', x:e.x, y:e.y, vx:Math.cos(angle)*spd, vy:Math.sin(angle)*spd, life:0.45, maxLife:0.45, color:'#ffeb3b', r:3 });
+    }
+  }
 }
 
 function damageEnemy(e, dmg) {
@@ -147,7 +176,12 @@ function update(dt) {
   if (state.waveActive && state.waveSpawned < state.waveTotal) {
     state.spawnTimer -= dt;
     if (state.spawnTimer <= 0) {
-      spawnEnemy();
+      if (state.waveHasBoss && !state.bossSpawned) {
+        spawnEnemy(true);
+        state.bossSpawned = true;
+      } else {
+        spawnEnemy();
+      }
       state.waveSpawned++;
       state.spawnTimer = 0.9 - Math.min(0.5, state.wave * 0.03);
     }
@@ -189,12 +223,41 @@ function update(dt) {
 
   // Towers shoot
   for (const t of state.towers) {
+    // Continuous upgrades — bypass cooldown system
+    if (t.upgrade === 'deathray') {
+      const drRange = DEATHRAY.range * CELL;
+      let drTarget = null, bestWp = -1;
+      for (const e of state.enemies) {
+        if (!e.dead && !e.reached && dist(t, e) <= drRange && e.wpIdx > bestWp) { drTarget = e; bestWp = e.wpIdx; }
+      }
+      t.rayTarget = drTarget;
+      if (drTarget) {
+        damageEnemyContinuous(drTarget, DEATHRAY.dps * dt);
+        t.aimAngle = Math.atan2(drTarget.y - t.y, drTarget.x - t.x);
+      }
+      continue;
+    }
+    if (t.upgrade === 'permafrost') {
+      const pfRange = PERMAFROST.range * CELL;
+      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= pfRange);
+      for (const e of inRange) {
+        applySlow(e, PERMAFROST.slowMult, 0.25);
+        damageEnemyContinuous(e, PERMAFROST.dps * dt);
+      }
+      if (inRange.length > 0 && Math.random() < 0.12) {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = Math.random() * pfRange;
+        state.particles.push({ type:'spark', x:t.x+Math.cos(angle)*radius, y:t.y+Math.sin(angle)*radius, vx:0, vy:-15, life:0.5, maxLife:0.5, color:PERMAFROST.color, r:3 });
+      }
+      continue;
+    }
+
     t.cooldown = (t.cooldown || 0) - dt;
     if (t.cooldown > 0) continue;
     const def = TOWER_TYPES[t.type];
     const rangePixels = def.range * CELL;
 
-    // Sun God: obliterate ALL enemies on the entire map
+    // Sun God
     if (t.upgrade === 'sungod') {
       const sgRange = SUNGOD.range * CELL;
       const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= sgRange);
@@ -415,7 +478,6 @@ function drawTowers() {
 
     if (t.upgrade === 'sungod') {
       const pulse = 0.5 + 0.3 * Math.sin(now / 200 + t.x * 0.05);
-      // Glowing sun disc
       ctx.globalAlpha = pulse * 0.4;
       ctx.fillStyle = SUNGOD.color;
       ctx.beginPath(); ctx.arc(t.x, t.y, 26, 0, Math.PI*2); ctx.fill();
@@ -424,7 +486,6 @@ function drawTowers() {
       ctx.beginPath(); ctx.arc(t.x, t.y, 18, 0, Math.PI*2); ctx.fill();
       ctx.fillStyle = '#fff8e1';
       ctx.beginPath(); ctx.arc(t.x, t.y, 10, 0, Math.PI*2); ctx.fill();
-      // Rotating rays
       ctx.strokeStyle = SUNGOD.color;
       ctx.lineWidth = 3;
       for (let i = 0; i < 8; i++) {
@@ -436,6 +497,54 @@ function drawTowers() {
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
+      continue;
+    }
+
+    if (t.upgrade === 'deathray') {
+      // Overdraw base red
+      ctx.fillStyle = DEATHRAY.color;
+      ctx.fillRect(t.x - 12, t.y - 12, 24, 24);
+      const pulse = 0.5 + 0.4 * Math.sin(now / 100 + t.x * 0.1);
+      ctx.strokeStyle = `rgba(255,23,68,${pulse})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 16 + 4 * Math.sin(now / 70), 0, Math.PI * 2);
+      ctx.stroke();
+      // Beam to target
+      if (t.rayTarget && !t.rayTarget.dead && !t.rayTarget.reached) {
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = DEATHRAY.color;
+        ctx.lineWidth = 8;
+        ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(t.rayTarget.x, t.rayTarget.y); ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = DEATHRAY.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(t.rayTarget.x, t.rayTarget.y); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(t.rayTarget.x, t.rayTarget.y); ctx.stroke();
+      }
+      continue;
+    }
+
+    if (t.upgrade === 'permafrost') {
+      const pulse = 0.4 + 0.3 * Math.sin(now / 150 + t.x * 0.05);
+      ctx.globalAlpha = pulse * 0.45;
+      ctx.fillStyle = PERMAFROST.color;
+      ctx.beginPath(); ctx.arc(t.x, t.y, 28, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = PERMAFROST.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(t.x, t.y, 22, 0, Math.PI*2); ctx.stroke();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + now * 0.0008;
+        ctx.beginPath();
+        ctx.moveTo(t.x, t.y);
+        ctx.lineTo(t.x + Math.cos(a) * 16, t.y + Math.sin(a) * 16);
+        ctx.stroke();
+      }
       continue;
     }
 
@@ -534,26 +643,31 @@ function drawEnemies() {
       ctx.globalAlpha = 1;
     }
 
-    ctx.fillStyle = e.flash > 0 ? '#fff' : (frozen ? '#b3e5fc' : '#e53935');
-    ctx.beginPath();
-    ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = frozen ? '#0288d1' : '#b71c1c';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    if (e.isBoss) {
+      ctx.fillStyle = e.flash > 0 ? '#fff' : '#4a148c';
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.fillStyle = '#ffd700';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('BOSS', e.x, e.y + 3);
+    } else {
+      ctx.fillStyle = e.flash > 0 ? '#fff' : (frozen ? '#b3e5fc' : '#e53935');
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = frozen ? '#0288d1' : '#b71c1c';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      const wp = WAYPOINTS[Math.min(e.wpIdx, WAYPOINTS.length - 1)];
+      const angle = Math.atan2(wp.y - e.y, wp.x - e.x);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(e.x + Math.cos(angle)*4, e.y + Math.sin(angle)*4, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#111';
+      ctx.beginPath(); ctx.arc(e.x + Math.cos(angle)*5, e.y + Math.sin(angle)*5, 1.5, 0, Math.PI * 2); ctx.fill();
+    }
 
-    const wp = WAYPOINTS[Math.min(e.wpIdx, WAYPOINTS.length - 1)];
-    const angle = Math.atan2(wp.y - e.y, wp.x - e.x);
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(e.x + Math.cos(angle)*4, e.y + Math.sin(angle)*4, 3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#111';
-    ctx.beginPath();
-    ctx.arc(e.x + Math.cos(angle)*5, e.y + Math.sin(angle)*5, 1.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    const bw = 24, bh = 4, bx = e.x - bw/2, by = e.y - e.r - 8;
+    const bw = e.isBoss ? 40 : 24, bh = e.isBoss ? 6 : 4, bx = e.x - bw/2, by = e.y - e.r - (e.isBoss ? 12 : 8);
     ctx.fillStyle = '#222';
     ctx.fillRect(bx, by, bw, bh);
     const pct = e.hp / e.maxHp;
@@ -659,9 +773,9 @@ function drawTopBar() {
     state.wave > 0 ? '#37474f' : '#4caf50');
 
   drawButton(CW - 68, 8, 58, 34,
-    state.speed === 1 ? '1x' : '2x',
-    state.speed === 1 ? '#1a237e' : '#4a1080',
-    state.speed === 1 ? '#3f51b5' : '#9c27b0');
+    state.speed === 1 ? '1x' : state.speed === 2 ? '2x' : '4x',
+    state.speed === 1 ? '#1a237e' : state.speed === 2 ? '#4a1080' : '#7b1a00',
+    state.speed === 1 ? '#3f51b5' : state.speed === 2 ? '#9c27b0' : '#ff5722');
 }
 
 function drawButton(x, y, w, h, label, bg, border) {
@@ -779,9 +893,16 @@ function drawMiniTower(cx, cy, type, def) {
 
 function drawRangeCircle(tower) {
   const def = TOWER_TYPES[tower.type];
-  const isSunGod = tower.upgrade === 'sungod';
-  const color = isSunGod ? SUNGOD.color : def.color;
-  const range = (isSunGod ? SUNGOD.range : def.range) * CELL;
+  const isSunGod    = tower.upgrade === 'sungod';
+  const isDeathRay  = tower.upgrade === 'deathray';
+  const isPermafrost = tower.upgrade === 'permafrost';
+
+  let color, range;
+  if (isSunGod)      { color = SUNGOD.color;      range = SUNGOD.range * CELL; }
+  else if (isDeathRay)   { color = DEATHRAY.color;   range = DEATHRAY.range * CELL; }
+  else if (isPermafrost) { color = PERMAFROST.color; range = PERMAFROST.range * CELL; }
+  else                   { color = def.color;         range = def.range * CELL; }
+
   ctx.globalAlpha = 0.1;
   ctx.fillStyle = color;
   ctx.beginPath(); ctx.arc(tower.x, tower.y, range, 0, Math.PI*2); ctx.fill();
@@ -790,19 +911,44 @@ function drawRangeCircle(tower) {
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(tower.x, tower.y, range, 0, Math.PI*2); ctx.stroke();
   ctx.globalAlpha = 1;
-  // Sun God upgrade hint on nuke towers
-  if (tower.type === 'nuke' && !isSunGod) {
-    const canAfford = state.gold >= SUNGOD.cost;
-    ctx.font = 'bold 11px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = canAfford ? '#ffd700' : '#546e7a';
-    ctx.fillText('☀ Click → Sun God $50,000', tower.x, tower.y - 26);
-  }
+
+  ctx.textAlign = 'center';
   if (isSunGod) {
     ctx.font = 'bold 12px monospace';
-    ctx.textAlign = 'center';
     ctx.fillStyle = '#ffd700';
-    ctx.fillText('☀ SUN GOD', tower.x, tower.y - 26);
+    ctx.fillText('☀ SUN GOD', tower.x, tower.y - 32);
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#fff8e1';
+    ctx.fillText(`DMG:${SUNGOD.dmg}  RNG:${SUNGOD.range}  ${SUNGOD.rate}/s`, tower.x, tower.y - 19);
+  } else if (isDeathRay) {
+    ctx.font = 'bold 12px monospace';
+    ctx.fillStyle = DEATHRAY.color;
+    ctx.fillText('⚡ DEATH RAY', tower.x, tower.y - 32);
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#ffcdd2';
+    ctx.fillText(`DPS:${DEATHRAY.dps}  RNG:${DEATHRAY.range}  continuous`, tower.x, tower.y - 19);
+  } else if (isPermafrost) {
+    ctx.font = 'bold 12px monospace';
+    ctx.fillStyle = PERMAFROST.color;
+    ctx.fillText('❄ PERMAFROST', tower.x, tower.y - 32);
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#e1f5fe';
+    ctx.fillText(`DPS:${PERMAFROST.dps}  RNG:${PERMAFROST.range}  SLOW:${Math.round(PERMAFROST.slowMult*100)}%`, tower.x, tower.y - 19);
+  } else if (tower.type === 'nuke') {
+    const canAfford = state.gold >= SUNGOD.cost;
+    ctx.font = 'bold 11px monospace';
+    ctx.fillStyle = canAfford ? '#ffd700' : '#546e7a';
+    ctx.fillText(`☀ Click → Sun God $${SUNGOD.cost.toLocaleString()}`, tower.x, tower.y - 26);
+  } else if (tower.type === 'tesla') {
+    const canAfford = state.gold >= DEATHRAY.cost;
+    ctx.font = 'bold 11px monospace';
+    ctx.fillStyle = canAfford ? DEATHRAY.color : '#546e7a';
+    ctx.fillText(`⚡ Click → Death Ray $${DEATHRAY.cost.toLocaleString()}`, tower.x, tower.y - 26);
+  } else if (tower.type === 'cryo') {
+    const canAfford = state.gold >= PERMAFROST.cost;
+    ctx.font = 'bold 11px monospace';
+    ctx.fillStyle = canAfford ? PERMAFROST.color : '#546e7a';
+    ctx.fillText(`❄ Click → Permafrost $${PERMAFROST.cost.toLocaleString()}`, tower.x, tower.y - 26);
   }
 }
 
@@ -876,7 +1022,7 @@ canvas.addEventListener('click', ev => {
     if (mx >= CW/2-75 && mx <= CW/2+75 && my >= CH/2+30 && my <= CH/2+74) state = createState();
     return;
   }
-  if (mx >= CW-68 && mx <= CW-10 && my >= 8 && my <= 42) { state.speed = state.speed===1?2:1; return; }
+  if (mx >= CW-68 && mx <= CW-10 && my >= 8 && my <= 42) { state.speed = state.speed===1?2:state.speed===2?4:1; return; }
   if (mx >= 620 && mx <= 730 && my >= 8 && my <= 42 && state.wave === 0) {
     setMap(1 - activeMap); state = createState(); return;
   }
@@ -901,6 +1047,12 @@ canvas.addEventListener('click', ev => {
       if (existing.type === 'nuke' && !existing.upgrade && state.gold >= SUNGOD.cost) {
         state.gold -= SUNGOD.cost;
         existing.upgrade = 'sungod';
+      } else if (existing.type === 'tesla' && !existing.upgrade && state.gold >= DEATHRAY.cost) {
+        state.gold -= DEATHRAY.cost;
+        existing.upgrade = 'deathray';
+      } else if (existing.type === 'cryo' && !existing.upgrade && state.gold >= PERMAFROST.cost) {
+        state.gold -= PERMAFROST.cost;
+        existing.upgrade = 'permafrost';
       }
       return;
     }
