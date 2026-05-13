@@ -949,19 +949,28 @@ function drawRangeCircle(tower) {
     ctx.fillText(`DPS:${PERMAFROST.dps}  RNG:${PERMAFROST.range}  SLOW:${Math.round(PERMAFROST.slowMult*100)}%`, tower.x, tower.y - 19);
   } else if (tower.type === 'nuke') {
     const canAfford = state.gold >= SUNGOD.cost;
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#e1bee7';
+    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`, tower.x, tower.y - 38);
     ctx.font = 'bold 11px monospace';
     ctx.fillStyle = canAfford ? '#ffd700' : '#546e7a';
-    ctx.fillText(`☀ Click → Sun God $${SUNGOD.cost.toLocaleString()}`, tower.x, tower.y - 26);
+    ctx.fillText(`☀ Click → Sun God $${SUNGOD.cost.toLocaleString()}`, tower.x, tower.y - 24);
   } else if (tower.type === 'tesla') {
     const canAfford = state.gold >= DEATHRAY.cost;
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#fff9c4';
+    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`, tower.x, tower.y - 38);
     ctx.font = 'bold 11px monospace';
     ctx.fillStyle = canAfford ? DEATHRAY.color : '#546e7a';
-    ctx.fillText(`⚡ Click → Death Ray $${DEATHRAY.cost.toLocaleString()}`, tower.x, tower.y - 26);
+    ctx.fillText(`⚡ Click → Death Ray $${DEATHRAY.cost.toLocaleString()}`, tower.x, tower.y - 24);
   } else if (tower.type === 'cryo') {
     const canAfford = state.gold >= PERMAFROST.cost;
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#b3e5fc';
+    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`, tower.x, tower.y - 38);
     ctx.font = 'bold 11px monospace';
     ctx.fillStyle = canAfford ? PERMAFROST.color : '#546e7a';
-    ctx.fillText(`❄ Click → Permafrost $${PERMAFROST.cost.toLocaleString()}`, tower.x, tower.y - 26);
+    ctx.fillText(`❄ Click → Permafrost $${PERMAFROST.cost.toLocaleString()}`, tower.x, tower.y - 24);
   }
 }
 
