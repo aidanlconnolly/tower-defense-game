@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tower Defense</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: monospace; }
+  canvas { display: block; cursor: pointer; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const CELL = 40;
+const COLS = 20;
+const ROWS = 14;
+const PANEL_W = 220;
+const TOP_H = 50;
+const CW = COLS * CELL + PANEL_W;
+const CH = ROWS * CELL + TOP_H;
+
+const canvas = document.getElementById('c');
+canvas.width = CW;
+canvas.height = CH;
+const ctx = canvas.getContext('2d');
+
+const FINAL_PATH = [
+  [0,2],[1,2],[2,2],[3,2],[4,2],[5,2],[6,2],[7,2],
+  [7,3],[7,4],[7,5],[7,6],[7,7],[7,8],[7,9],
+  [8,9],[9,9],[10,9],[11,9],[12,9],
+  [12,8],[12,7],[12,6],[12,5],[12,4],[12,3],[12,2],[12,1],
+  [13,1],[14,1],[15,1],[16,1],[17,1],
+  [17,2],[17,3],[17,4],[17,5],[17,6],[17,7],[17,8],[17,9],[17,10],[17,11],
+  [16,11],[15,11],[14,11],[13,11],[12,11],[11,11],[10,11],[9,11],[8,11],
+  [8,12],[8,13],
+  [9,13],[10,13],[11,13],[12,13],[13,13],[14,13],[15,13],[16,13],[17,13],[18,13],[19,13]
+];
+
+const PATH_SET = new Set(FINAL_PATH.map(([c,r]) => `${c},${r}`));
+
+// World-space waypoints (center of each cell)
+const WAYPOINTS = FINAL_PATH.map(([c,r]) => ({
+  x: c * CELL + CELL/2,
+  y: r * CELL + TOP_H + CELL/2
+}));
+
+const TOWER_TYPES = {
+  basic:  { name:'Basic',  color:'#4fc3f7', cost:50,  dmg:20,  range:3,   rate:1.2, splash:0,   desc:'Fast & cheap' },
+  sniper: { name:'Sniper', color:'#ef9a9a', cost:125, dmg:80,  range:7,   rate:0.5, splash:0,   desc:'Long range' },
+  splash: { name:'Splash', color:'#a5d6a7', cost:100, dmg:40,  range:2.5, rate:0.7, splash:1.5, desc:'Area damage' },
+};
+
+let state = createState();
+
+function createState() {
+  return {
+    gold: 200,
+    lives: 20,
+    wave: 0,
+    waveActive: false,
+    waveSpawned: 0,
+    waveTotal: 0,
+    spawnTimer: 0,
+    speed: 1,
+    selectedTower: 'basic',
+    towers: [],
+    enemies: [],
+    projectiles: [],
+    particles: [],
+    hoverCell: null,
+    hoveredTower: null,
+    gameOver: false,
+    win: false,
+    lastTime: 0,
+  };
+}
+
+function startWave() {
+  if (state.waveActive || state.gameOver) return;
+  state.wave++;
+  state.waveActive = true;
+  state.waveSpawned = 0;
+  state.waveTotal = 6 + state.wave * 2;
+  state.spawnTimer = 0;
+}
+
+function spawnEnemy() {
+  const hp = Math.round(60 * Math.pow(1.35, state.wave - 1));
+  const speed = 55 + state.wave * 3;
+  state.enemies.push({
+    x: WAYPOINTS[0].x,
+    y: WAYPOINTS[0].y,
+    wpIdx: 0,
+    hp, maxHp: hp,
+    speed,
+    gold: Math.ceil(hp / 10),
+    r: 10,
+    dead: false,
+    reached: false,
+    // visual flicker
+    flash: 0,
+  });
+}
+
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function update(dt) {
+  if (state.gameOver) return;
+
+  // Spawn enemies
+  if (state.waveActive && state.waveSpawned < state.waveTotal) {
+    state.spawnTimer -= dt;
+    if (state.spawnTimer <= 0) {
+      spawnEnemy();
+      state.waveSpawned++;
+      state.spawnTimer = 0.9 - Math.min(0.5, state.wave * 0.03);
+    }
+  }
+
+  // Move enemies
+  for (const e of state.enemies) {
+    if (e.dead || e.reached) continue;
+    const target = WAYPOINTS[e.wpIdx];
+    const d = dist(e, target);
+    const step = e.speed * dt;
+    if (d <= step) {
+      e.x = target.x; e.y = target.y;
+      e.wpIdx++;
+      if (e.wpIdx >= WAYPOINTS.length) {
+        e.reached = true;
+        state.lives--;
+        if (state.lives <= 0) { state.lives = 0; state.gameOver = true; }
+      }
+    } else {
+      const nx = (target.x - e.x) / d;
+      const ny = (target.y - e.y) / d;
+      e.x += nx * step;
+      e.y += ny * step;
+    }
+    if (e.flash > 0) e.flash -= dt * 8;
+  }
+
+  // Towers shoot
+  for (const t of state.towers) {
+    t.cooldown = (t.cooldown || 0) - dt;
+    if (t.cooldown > 0) continue;
+    const def = TOWER_TYPES[t.type];
+    const rangePixels = def.range * CELL;
+
+    // Find target: first enemy furthest along path in range
+    let target = null;
+    let bestWp = -1;
+    for (const e of state.enemies) {
+      if (e.dead || e.reached) continue;
+      if (dist(t, e) <= rangePixels && e.wpIdx > bestWp) {
+        target = e; bestWp = e.wpIdx;
+      }
+    }
+    if (!target) continue;
+
+    t.cooldown = 1 / def.rate;
+    t.aimAngle = Math.atan2(target.y - t.y, target.x - t.x);
+
+    if (def.splash > 0) {
+      // Splash: instant AoE at target position
+      const splashR = def.splash * CELL;
+      for (const e of state.enemies) {
+        if (e.dead || e.reached) continue;
+        if (dist({ x: target.x, y: target.y }, e) <= splashR) {
+          damageEnemy(e, def.dmg, t);
+        }
+      }
+      // Visual ring
+      state.particles.push({ type:'ring', x: target.x, y: target.y, r: 0, maxR: splashR, life: 0.3, maxLife: 0.3, color: def.color });
+    } else {
+      // Projectile
+      state.projectiles.push({
+        x: t.x, y: t.y,
+        tx: target.x, ty: target.y,
+        target,
+        dmg: def.dmg,
+        speed: 300,
+        color: def.color,
+        r: 4,
+      });
+    }
+  }
+
+  // Move projectiles
+  for (const p of state.projectiles) {
+    if (p.hit) continue;
+    const d = dist(p, { x: p.tx, y: p.ty });
+    const step = p.speed * dt;
+    if (d <= step || (p.target && p.target.dead)) {
+      p.hit = true;
+      if (!p.target.dead && !p.target.reached) {
+        damageEnemy(p.target, p.dmg, null);
+      }
+    } else {
+      const nx = (p.tx - p.x) / d;
+      const ny = (p.ty - p.y) / d;
+      p.x += nx * step;
+      p.y += ny * step;
+    }
+  }
+
+  // Particles
+  for (const p of state.particles) {
+    p.life -= dt;
+    if (p.type === 'ring') p.r = p.maxR * (1 - p.life / p.maxLife);
+  }
+
+  // Cleanup
+  state.enemies = state.enemies.filter(e => !e.dead && !e.reached);
+  state.projectiles = state.projectiles.filter(p => !p.hit);
+  state.particles = state.particles.filter(p => p.life > 0);
+
+  // Wave end check
+  if (state.waveActive && state.waveSpawned >= state.waveTotal && state.enemies.length === 0) {
+    state.waveActive = false;
+    // Bonus gold at end of wave
+    state.gold += 25 + state.wave * 5;
+  }
+}
+
+function damageEnemy(e, dmg, tower) {
+  e.hp -= dmg;
+  e.flash = 1;
+  if (e.hp <= 0) {
+    e.dead = true;
+    state.gold += e.gold;
+    // Death particles
+    for (let i = 0; i < 6; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 40 + Math.random() * 60;
+      state.particles.push({
+        type: 'spark', x: e.x, y: e.y,
+        vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd,
+        life: 0.4, maxLife: 0.4,
+        color: '#ffeb3b', r: 3,
+      });
+    }
+  }
+}
+
+// ─── Drawing ────────────────────────────────────────────────────────────────
+
+function draw() {
+  ctx.clearRect(0, 0, CW, CH);
+
+  drawBackground();
+  drawPath();
+  drawGrid();
+  drawTowers();
+  drawEnemies();
+  drawProjectiles();
+  drawParticles();
+  drawTopBar();
+  drawPanel();
+
+  if (state.hoveredTower) drawRangeCircle(state.hoveredTower);
+  if (state.hoverCell && !state.gameOver) drawPlacementPreview();
+
+  if (state.gameOver) drawGameOver();
+}
+
+function drawBackground() {
+  ctx.fillStyle = '#263238';
+  ctx.fillRect(0, TOP_H, COLS * CELL, ROWS * CELL);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, CW, TOP_H);
+  ctx.fillStyle = '#16213e';
+  ctx.fillRect(COLS * CELL, 0, PANEL_W, CH);
+}
+
+function drawPath() {
+  ctx.fillStyle = '#5d4037';
+  for (const [c, r] of FINAL_PATH) {
+    ctx.fillRect(c * CELL + 1, r * CELL + TOP_H + 1, CELL - 2, CELL - 2);
+  }
+  // Path border/highlight
+  ctx.strokeStyle = '#795548';
+  ctx.lineWidth = 1;
+  for (const [c, r] of FINAL_PATH) {
+    ctx.strokeRect(c * CELL + 1, r * CELL + TOP_H + 1, CELL - 2, CELL - 2);
+  }
+}
+
+function drawGrid() {
+  ctx.strokeStyle = '#37474f';
+  ctx.lineWidth = 0.5;
+  for (let c = 0; c <= COLS; c++) {
+    ctx.beginPath();
+    ctx.moveTo(c * CELL, TOP_H);
+    ctx.lineTo(c * CELL, TOP_H + ROWS * CELL);
+    ctx.stroke();
+  }
+  for (let r = 0; r <= ROWS; r++) {
+    ctx.beginPath();
+    ctx.moveTo(0, TOP_H + r * CELL);
+    ctx.lineTo(COLS * CELL, TOP_H + r * CELL);
+    ctx.stroke();
+  }
+
+  // Start/End markers
+  ctx.fillStyle = '#66bb6a';
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('START', WAYPOINTS[0].x, TOP_H + 2 * CELL + 2);
+
+  ctx.fillStyle = '#ef5350';
+  const last = WAYPOINTS[WAYPOINTS.length - 1];
+  ctx.fillText('END', last.x, last.y + 4);
+}
+
+function drawTowers() {
+  for (const t of state.towers) {
+    const def = TOWER_TYPES[t.type];
+    // Base
+    ctx.fillStyle = '#455a64';
+    ctx.fillRect(t.x - 14, t.y - 14, 28, 28);
+    // Tower body
+    ctx.fillStyle = def.color;
+    ctx.fillRect(t.x - 10, t.y - 10, 20, 20);
+
+    // Barrel
+    ctx.save();
+    ctx.translate(t.x, t.y);
+    ctx.rotate(t.aimAngle || 0);
+    ctx.fillStyle = '#37474f';
+    const barrelLen = t.type === 'sniper' ? 18 : 12;
+    ctx.fillRect(0, -3, barrelLen, 6);
+    ctx.restore();
+
+    // Type indicator dot
+    ctx.fillStyle = '#fff';
+    if (t.type === 'splash') {
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (t.type === 'sniper') {
+      ctx.fillRect(t.x - 4, t.y - 1, 8, 2);
+      ctx.fillRect(t.x - 1, t.y - 4, 2, 8);
+    }
+  }
+}
+
+function drawEnemies() {
+  for (const e of state.enemies) {
+    const flash = e.flash > 0;
+    // Body
+    ctx.fillStyle = flash ? '#fff' : '#e53935';
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#b71c1c';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Eye (direction indicator)
+    const wp = WAYPOINTS[Math.min(e.wpIdx, WAYPOINTS.length - 1)];
+    const angle = Math.atan2(wp.y - e.y, wp.x - e.x);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(e.x + Math.cos(angle) * 4, e.y + Math.sin(angle) * 4, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(e.x + Math.cos(angle) * 5, e.y + Math.sin(angle) * 5, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Health bar
+    const bw = 24, bh = 4;
+    const bx = e.x - bw / 2, by = e.y - e.r - 8;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(bx, by, bw, bh);
+    const pct = e.hp / e.maxHp;
+    ctx.fillStyle = pct > 0.5 ? '#66bb6a' : pct > 0.25 ? '#ffa726' : '#ef5350';
+    ctx.fillRect(bx, by, bw * pct, bh);
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(bx, by, bw, bh);
+  }
+}
+
+function drawProjectiles() {
+  for (const p of state.projectiles) {
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawParticles() {
+  for (const p of state.particles) {
+    const alpha = p.life / p.maxLife;
+    ctx.globalAlpha = alpha;
+    if (p.type === 'spark') {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * alpha, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.type === 'ring') {
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawTopBar() {
+  ctx.fillStyle = '#1a237e';
+  ctx.fillRect(0, 0, CW, TOP_H);
+  ctx.strokeStyle = '#3949ab';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, TOP_H);
+  ctx.lineTo(CW, TOP_H);
+  ctx.stroke();
+
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'left';
+
+  // Wave
+  ctx.fillStyle = '#90caf9';
+  ctx.fillText(`Wave: ${state.wave}`, 12, 32);
+
+  // Lives
+  ctx.fillStyle = state.lives > 5 ? '#a5d6a7' : '#ef9a9a';
+  ctx.fillText(`Lives: ${state.lives}`, 140, 32);
+
+  // Gold
+  ctx.fillStyle = '#fff176';
+  ctx.fillText(`Gold: ${state.gold}`, 270, 32);
+
+  // Wave status
+  if (state.waveActive) {
+    ctx.fillStyle = '#ffcc80';
+    const remaining = state.waveTotal - state.waveSpawned + state.enemies.length;
+    ctx.fillText(`Enemies: ${remaining}`, 400, 32);
+  } else if (state.wave > 0) {
+    ctx.fillStyle = '#a5d6a7';
+    ctx.fillText(`+${25 + state.wave * 5}g bonus!`, 400, 32);
+  }
+
+  // Start Wave button
+  drawButton(
+    COLS * CELL - 120, 8, 110, 34,
+    state.waveActive ? `Wave ${state.wave}...` : `Start Wave ${state.wave + 1}`,
+    state.waveActive ? '#37474f' : '#1b5e20',
+    state.waveActive ? '#607d8b' : '#4caf50'
+  );
+
+  // Speed toggle
+  drawButton(
+    COLS * CELL + PANEL_W - 72, 8, 62, 34,
+    state.speed === 1 ? '1x' : '2x',
+    state.speed === 1 ? '#1a237e' : '#4a1080',
+    state.speed === 1 ? '#3f51b5' : '#9c27b0'
+  );
+}
+
+function drawButton(x, y, w, h, label, bg, border) {
+  ctx.fillStyle = bg;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 13px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, x + w / 2, y + h / 2 + 5);
+}
+
+function drawPanel() {
+  const px = COLS * CELL;
+  ctx.fillStyle = '#0d1b2a';
+  ctx.fillRect(px, TOP_H, PANEL_W, ROWS * CELL);
+
+  ctx.fillStyle = '#90caf9';
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('TOWERS', px + PANEL_W / 2, TOP_H + 24);
+
+  let ty = TOP_H + 45;
+  for (const [key, def] of Object.entries(TOWER_TYPES)) {
+    const selected = state.selectedTower === key;
+    const affordable = state.gold >= def.cost;
+
+    ctx.fillStyle = selected ? '#1a3a5c' : '#0d2137';
+    ctx.fillRect(px + 8, ty, PANEL_W - 16, 90);
+    ctx.strokeStyle = selected ? '#4fc3f7' : (affordable ? '#37474f' : '#37474f');
+    ctx.lineWidth = selected ? 2 : 1;
+    ctx.strokeRect(px + 8, ty, PANEL_W - 16, 90);
+
+    // Tower icon
+    ctx.fillStyle = def.color;
+    ctx.fillRect(px + 18, ty + 10, 24, 24);
+    ctx.fillStyle = '#455a64';
+    ctx.fillRect(px + 14, ty + 34, 32, 6);
+
+    // Name & cost
+    ctx.fillStyle = affordable ? '#fff' : '#78909c';
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(def.name, px + 52, ty + 22);
+    ctx.fillStyle = affordable ? '#fff176' : '#78909c';
+    ctx.fillText(`$${def.cost}`, px + 52, ty + 38);
+
+    // Stats
+    ctx.fillStyle = '#90a4ae';
+    ctx.font = '10px monospace';
+    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}`, px + 18, ty + 58);
+    ctx.fillText(`SPD:${def.rate.toFixed(1)}/s`, px + 18, ty + 72);
+    ctx.fillStyle = '#80cbc4';
+    ctx.fillText(def.desc, px + 18, ty + 84);
+
+    ty += 100;
+  }
+
+  // Instructions
+  ctx.fillStyle = '#546e7a';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Click grid to place', px + PANEL_W / 2, ty + 15);
+  ctx.fillText('Hover tower = range', px + PANEL_W / 2, ty + 28);
+}
+
+function drawRangeCircle(tower) {
+  const def = TOWER_TYPES[tower.type];
+  ctx.globalAlpha = 0.15;
+  ctx.fillStyle = def.color;
+  ctx.beginPath();
+  ctx.arc(tower.x, tower.y, def.range * CELL, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 0.5;
+  ctx.strokeStyle = def.color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(tower.x, tower.y, def.range * CELL, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function drawPlacementPreview() {
+  const { c, r } = state.hoverCell;
+  if (PATH_SET.has(`${c},${r}`)) return;
+  if (hasTower(c, r)) return;
+  const def = TOWER_TYPES[state.selectedTower];
+  const affordable = state.gold >= def.cost;
+
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = affordable ? def.color : '#f44336';
+  ctx.fillRect(c * CELL, r * CELL + TOP_H, CELL, CELL);
+  ctx.globalAlpha = 1;
+
+  if (affordable) {
+    const cx = c * CELL + CELL / 2, cy = r * CELL + TOP_H + CELL / 2;
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = def.color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, def.range * CELL, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.4;
+    ctx.strokeStyle = def.color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, def.range * CELL, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawGameOver() {
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.fillRect(0, 0, CW, CH);
+
+  const mx = CW / 2, my = CH / 2;
+  ctx.fillStyle = '#1a237e';
+  ctx.fillRect(mx - 160, my - 100, 320, 200);
+  ctx.strokeStyle = '#ef5350';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(mx - 160, my - 100, 320, 200);
+
+  ctx.fillStyle = '#ef5350';
+  ctx.font = 'bold 32px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('GAME OVER', mx, my - 40);
+
+  ctx.fillStyle = '#90caf9';
+  ctx.font = '18px monospace';
+  ctx.fillText(`Survived ${state.wave} wave${state.wave !== 1 ? 's' : ''}`, mx, my);
+
+  drawButton(mx - 70, my + 30, 140, 42, 'RESTART', '#1b5e20', '#4caf50');
+}
+
+// ─── Input ───────────────────────────────────────────────────────────────────
+
+function hasTower(c, r) {
+  return state.towers.some(t => t.c === c && t.r === r);
+}
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  if (my >= TOP_H && mx < COLS * CELL) {
+    const c = Math.floor(mx / CELL);
+    const r = Math.floor((my - TOP_H) / CELL);
+    state.hoverCell = { c, r };
+  } else {
+    state.hoverCell = null;
+  }
+
+  // Detect hovered placed tower
+  state.hoveredTower = null;
+  for (const t of state.towers) {
+    if (Math.abs(mx - t.x) < CELL / 2 && Math.abs(my - t.y) < CELL / 2) {
+      state.hoveredTower = t;
+      break;
+    }
+  }
+});
+
+canvas.addEventListener('mouseleave', () => {
+  state.hoverCell = null;
+  state.hoveredTower = null;
+});
+
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  if (state.gameOver) {
+    // Restart button: centered at CW/2, my ~ CH/2+51
+    const bx = CW / 2 - 70, by = CH / 2 + 30;
+    if (mx >= bx && mx <= bx + 140 && my >= by && my <= by + 42) {
+      state = createState();
+    }
+    return;
+  }
+
+  // Speed toggle button
+  const stx = COLS * CELL + PANEL_W - 72, sty = 8;
+  if (mx >= stx && mx <= stx + 62 && my >= sty && my <= sty + 34) {
+    state.speed = state.speed === 1 ? 2 : 1;
+    return;
+  }
+
+  // Start wave button
+  const wbx = COLS * CELL - 120, wby = 8;
+  if (mx >= wbx && mx <= wbx + 110 && my >= wby && my <= wby + 34) {
+    startWave();
+    return;
+  }
+
+  // Tower selector panel
+  const px = COLS * CELL;
+  if (mx >= px && mx < px + PANEL_W && my >= TOP_H) {
+    let ty = TOP_H + 45;
+    for (const key of Object.keys(TOWER_TYPES)) {
+      if (my >= ty && my < ty + 90) {
+        state.selectedTower = key;
+        return;
+      }
+      ty += 100;
+    }
+    return;
+  }
+
+  // Place tower on grid
+  if (my >= TOP_H && mx < COLS * CELL) {
+    const c = Math.floor(mx / CELL);
+    const r = Math.floor((my - TOP_H) / CELL);
+    if (PATH_SET.has(`${c},${r}`)) return;
+    if (hasTower(c, r)) return;
+    const def = TOWER_TYPES[state.selectedTower];
+    if (state.gold < def.cost) return;
+    state.gold -= def.cost;
+    state.towers.push({
+      c, r,
+      x: c * CELL + CELL / 2,
+      y: r * CELL + TOP_H + CELL / 2,
+      type: state.selectedTower,
+      cooldown: 0,
+      aimAngle: 0,
+    });
+  }
+});
+
+// ─── Game Loop ───────────────────────────────────────────────────────────────
+
+function loop(ts) {
+  const dt = Math.min((ts - (state.lastTime || ts)) / 1000, 0.05) * state.speed;
+  state.lastTime = ts;
+
+  // Update spark positions
+  for (const p of state.particles) {
+    if (p.type === 'spark') {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+  }
+
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
