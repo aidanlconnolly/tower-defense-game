@@ -84,6 +84,7 @@ function createState() {
     gold: 200, lives: 20, wave: 0,
     waveActive: false, waveSpawned: 0, waveTotal: 0, spawnTimer: 0,
     waveHasBoss: false, bossSpawned: false,
+    autoStart: false,
     speed: 1, selectedTower: 'basic',
     towers: [], enemies: [], projectiles: [], particles: [],
     hoverCell: null, hoveredTower: null,
@@ -398,6 +399,7 @@ function update(dt) {
   if (state.waveActive && state.waveSpawned >= state.waveTotal && state.enemies.length === 0) {
     state.waveActive = false;
     state.gold += 25 + state.wave * 5;
+    if (state.autoStart) startWave();
   }
 }
 
@@ -772,6 +774,10 @@ function drawTopBar() {
     state.speed === 1 ? '1x' : state.speed === 2 ? '2x' : '4x',
     state.speed === 1 ? '#1a237e' : state.speed === 2 ? '#4a1080' : '#7b1a00',
     state.speed === 1 ? '#3f51b5' : state.speed === 2 ? '#9c27b0' : '#ff5722');
+
+  drawButton(CW - 136, 8, 62, 34, 'Auto',
+    state.autoStart ? '#1b3a1b' : '#1a237e',
+    state.autoStart ? '#4caf50' : '#37474f');
 }
 
 function drawButton(x, y, w, h, label, bg, border) {
@@ -1045,6 +1051,7 @@ canvas.addEventListener('click', ev => {
     return;
   }
   if (mx >= CW-68 && mx <= CW-10 && my >= 8 && my <= 42) { state.speed = state.speed===1?2:state.speed===2?4:1; return; }
+  if (mx >= CW-136 && mx <= CW-74 && my >= 8 && my <= 42) { state.autoStart = !state.autoStart; if (state.autoStart && !state.waveActive) startWave(); return; }
   if (mx >= 620 && mx <= 730 && my >= 8 && my <= 42 && state.wave === 0) {
     setMap(1 - activeMap); state = createState(); return;
   }
