@@ -824,7 +824,7 @@ function drawPanel() {
 
     ctx.fillStyle = '#78909c';
     ctx.font = '9px monospace';
-    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${def.rate}/s`, tx2, ty + 43);
+    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`, tx2, ty + 43);
 
     const descColor = { tesla:'#fff176', nuke:'#ce93d8', cryo:'#81d4fa', fire:'#ff7043' }[key] || '#80cbc4';
     ctx.fillStyle = descColor;
@@ -932,7 +932,7 @@ function drawRangeCircle(tower) {
     ctx.fillText('☀ SUN GOD', tower.x, tower.y - 32);
     ctx.font = '10px monospace';
     ctx.fillStyle = '#fff8e1';
-    ctx.fillText(`DMG:${SUNGOD.dmg}  RNG:${SUNGOD.range}  ${SUNGOD.rate}/s`, tower.x, tower.y - 19);
+    ctx.fillText(`DMG:${SUNGOD.dmg}  RNG:${SUNGOD.range}  ${(1/SUNGOD.rate).toFixed(1)}s reload`, tower.x, tower.y - 19);
   } else if (isDeathRay) {
     ctx.font = 'bold 12px monospace';
     ctx.fillStyle = DEATHRAY.color;
