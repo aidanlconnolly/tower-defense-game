@@ -52,24 +52,49 @@ const PATHS = [
     [21,6],[21,7],[21,8],[21,9],[21,10],
     [22,10],[23,10]
   ],
+  [ // Lake — path winds around two 3×3 lakes
+    [0,7],[1,7],[2,7],[3,7],[4,7],
+    [4,6],[4,5],[4,4],[4,3],[4,2],[4,1],
+    [5,1],[6,1],[7,1],[8,1],
+    [8,2],[8,3],[8,4],[8,5],[8,6],
+    [9,6],[10,6],[11,6],[12,6],
+    [12,7],[12,8],[12,9],
+    [13,9],[14,9],
+    [14,10],[14,11],[14,12],[14,13],
+    [15,13],[16,13],[17,13],[18,13],
+    [18,12],[18,11],[18,10],[18,9],
+    [19,9],[20,9],[21,9],[22,9],[23,9]
+  ],
+];
+
+// Lake cells per map (blocked for tower placement, drawn as water)
+const LAKES = [
+  [], // Classic
+  [], // Winding
+  [ // Lake — two 3×3 ponds
+    [5,2],[5,3],[5,4],[6,2],[6,3],[6,4],[7,2],[7,3],[7,4],   // Lake 1 (top-left)
+    [15,10],[15,11],[15,12],[16,10],[16,11],[16,12],[17,10],[17,11],[17,12], // Lake 2 (bottom-right)
+  ],
 ];
 
 let activeMap = 0;
-let ACTIVE_PATH, PATH_SET, WAYPOINTS;
+let ACTIVE_PATH, PATH_SET, WAYPOINTS, LAKE_SET;
 function setMap(idx) {
   activeMap = idx;
   ACTIVE_PATH = PATHS[idx];
   PATH_SET = new Set(ACTIVE_PATH.map(([c,r]) => `${c},${r}`));
   WAYPOINTS = ACTIVE_PATH.map(([c,r]) => ({ x: c*CELL+CELL/2, y: r*CELL+TOP_H+CELL/2 }));
+  LAKE_SET = new Set((LAKES[idx] || []).map(([c,r]) => `${c},${r}`));
 }
 setMap(0);
 
 const TOWER_TYPES = {
-  sniper: { name:'Sniper', color:'#ef9a9a', cost:125,  dmg:85,  range:7.5, rate:0.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Extreme range'      },
-  fire:   { name:'Fire',   color:'#ff7043', cost:175,  dmg:25,  range:3.5, rate:0.9,  splash:1.2, burnDps:15, burnDur:3, slowMult:0, slowDur:0, desc:'Burns + splash'     },
-  cryo:   { name:'Cryo',   color:'#81d4fa', cost:250,  dmg:20,  range:3.5, rate:0.75, splash:1.5, burnDps:0,  burnDur:0, slowMult:0.3, slowDur:3, desc:'Slows to 30% speed'},
-  nuke:   { name:'Nuke',   color:'#ce93d8', cost:600,  dmg:450, range:7,   rate:0.1,  splash:6,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Catastrophic AoE'  },
-  tesla:  { name:'Tesla',  color:'#fff176', cost:2000, dmg:70,  range:3,   rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Zaps ALL in range'  },
+  sniper:  { name:'Sniper',  color:'#ef9a9a', cost:125,  dmg:85,  range:7.5, rate:0.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Extreme range'       },
+  fire:    { name:'Fire',    color:'#ff7043', cost:175,  dmg:25,  range:3.5, rate:0.9,  splash:1.2, burnDps:15, burnDur:3, slowMult:0, slowDur:0, desc:'Burns + splash'      },
+  cryo:    { name:'Cryo',    color:'#81d4fa', cost:250,  dmg:20,  range:3.5, rate:0.75, splash:1.5, burnDps:0,  burnDur:0, slowMult:0.3, slowDur:3, desc:'Slows to 30% speed' },
+  nuke:    { name:'Nuke',    color:'#ce93d8', cost:600,  dmg:450, range:7,   rate:0.1,  splash:6,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Catastrophic AoE'   },
+  tesla:   { name:'Tesla',   color:'#fff176', cost:2000, dmg:70,  range:3,   rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Zaps ALL in range'   },
+  warship: { name:'Warship', color:'#4fc3f7', cost:4000, dmg:350, range:4,   rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Naval AoE, 5× Tesla' },
 };
 
 const SUNGOD       = { cost:100000,  dmg:350,  rate:1.2, range:12,  color:'#ffd700' };
@@ -80,6 +105,12 @@ const INFERNO      = { cost:350000,  dps:120,  range:2.5,           color:'#ff33
 const SUPERNOVA    = { cost:400000,  dmg:1050, rate:1.2, range:12,  color:'#ff8c00' };
 const OMEGARAY     = { cost:500000,  dps:2700, range:8,             color:'#ff0055' };
 const ABSOLUTEZERO = { cost:1000000, dps:150,  range:5,  slowMult:0.05, color:'#00ffee' };
+// Warship upgrade chain (AoE continuous, hits ALL enemies in range)
+const CANNONADE    = { cost:8000,    dps:4375,   range:5,  color:'#29b6f6' };
+const BROADSIDE    = { cost:16000,   dps:21875,  range:6,  color:'#0288d1' };
+const LEVIATHAN    = { cost:40000,   dps:65625,  range:7,  color:'#01579b' };
+// Sniper tier 3 (single-target continuous, range beyond railgun)
+const GODSHOT      = { cost:340000,  dps:131250, range:14, color:'#d500f9' };
 
 let state = createState();
 
@@ -228,6 +259,46 @@ function update(dt) {
   // Towers shoot
   for (const t of state.towers) {
     // Continuous upgrades — bypass cooldown system
+    if (t.upgrade === 'godshot') {
+      const gsRange = GODSHOT.range * CELL;
+      let gsTarget = null, bestWp = -1;
+      for (const e of state.enemies) {
+        if (!e.dead && !e.reached && dist(t, e) <= gsRange && e.wpIdx > bestWp) { gsTarget = e; bestWp = e.wpIdx; }
+      }
+      t.rayTarget = gsTarget;
+      if (gsTarget) { damageEnemyContinuous(gsTarget, GODSHOT.dps * dt); t.aimAngle = Math.atan2(gsTarget.y - t.y, gsTarget.x - t.x); }
+      continue;
+    }
+    if (t.upgrade === 'leviathan') {
+      const lvRange = LEVIATHAN.range * CELL;
+      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= lvRange);
+      for (const e of inRange) { damageEnemyContinuous(e, LEVIATHAN.dps * dt); }
+      if (inRange.length > 0 && Math.random() < 0.18) {
+        const angle = Math.random() * Math.PI * 2, radius = Math.random() * lvRange;
+        state.particles.push({ type:'spark', x:t.x+Math.cos(angle)*radius, y:t.y+Math.sin(angle)*radius, vx:0, vy:-20, life:0.35, maxLife:0.35, color:LEVIATHAN.color, r:5 });
+      }
+      continue;
+    }
+    if (t.upgrade === 'broadside') {
+      const bsRange = BROADSIDE.range * CELL;
+      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= bsRange);
+      for (const e of inRange) { damageEnemyContinuous(e, BROADSIDE.dps * dt); }
+      if (inRange.length > 0 && Math.random() < 0.15) {
+        const angle = Math.random() * Math.PI * 2, radius = Math.random() * bsRange;
+        state.particles.push({ type:'spark', x:t.x+Math.cos(angle)*radius, y:t.y+Math.sin(angle)*radius, vx:0, vy:-20, life:0.3, maxLife:0.3, color:BROADSIDE.color, r:4 });
+      }
+      continue;
+    }
+    if (t.upgrade === 'cannonade') {
+      const cnRange = CANNONADE.range * CELL;
+      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= cnRange);
+      for (const e of inRange) { damageEnemyContinuous(e, CANNONADE.dps * dt); }
+      if (inRange.length > 0 && Math.random() < 0.13) {
+        const angle = Math.random() * Math.PI * 2, radius = Math.random() * cnRange;
+        state.particles.push({ type:'spark', x:t.x+Math.cos(angle)*radius, y:t.y+Math.sin(angle)*radius, vx:0, vy:-18, life:0.28, maxLife:0.28, color:CANNONADE.color, r:4 });
+      }
+      continue;
+    }
     if (t.upgrade === 'omegaray') {
       const orRange = OMEGARAY.range * CELL;
       let orTarget = null, bestWp = -1;
@@ -325,6 +396,19 @@ function update(dt) {
         state.particles.push({ type:'arc', x1:t.x, y1:t.y, x2:e.x, y2:e.y, life:0.08, maxLife:0.08, color:'rgba(255,140,0,0.75)' });
       }
       state.particles.push({ type:'ring', x:t.x, y:t.y, r:0, maxR:snRange, life:0.18, maxLife:0.18, color:'rgba(255,140,0,0.55)' });
+      continue;
+    }
+
+    // Warship: cannon volley hits ALL enemies in range (like Tesla, blue arcs)
+    if (t.type === 'warship') {
+      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= rangePixels);
+      if (inRange.length === 0) continue;
+      t.cooldown = 1 / def.rate;
+      for (const e of inRange) {
+        damageEnemy(e, def.dmg);
+        state.particles.push({ type:'arc', x1:t.x, y1:t.y, x2:e.x, y2:e.y, life:0.1, maxLife:0.1, color:def.color });
+        state.particles.push({ type:'spark', x:e.x, y:e.y, vx:0, vy:0, life:0.12, maxLife:0.12, color:def.color, r:7 });
+      }
       continue;
     }
 
@@ -485,6 +569,21 @@ function drawBackground() {
   ctx.fillRect(0, 0, CW, TOP_H);
   ctx.fillStyle = '#16213e';
   ctx.fillRect(COLS * CELL, 0, PANEL_W, CH);
+  // Draw lake tiles
+  const now = Date.now();
+  for (const [c,r] of (LAKES[activeMap] || [])) {
+    ctx.fillStyle = '#0d47a1';
+    ctx.fillRect(c*CELL+1, r*CELL+TOP_H+1, CELL-2, CELL-2);
+    // Animated shimmer
+    const shimmer = 0.15 + 0.1 * Math.sin(now * 0.002 + c * 0.8 + r * 1.3);
+    ctx.globalAlpha = shimmer;
+    ctx.fillStyle = '#64b5f6';
+    ctx.fillRect(c*CELL+3, r*CELL+TOP_H+3, CELL-6, (CELL-6)/2);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#1565c0';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(c*CELL+1, r*CELL+TOP_H+1, CELL-2, CELL-2);
+  }
 }
 
 function drawPath() {
@@ -698,6 +797,91 @@ function drawTowers() {
       ctx.fillStyle = '#fff';
       ctx.beginPath(); ctx.arc(t.x, t.y, 8, 0, Math.PI*2); ctx.fill();
       ctx.globalAlpha = 1;
+      continue;
+    }
+
+    if (t.upgrade === 'godshot') {
+      ctx.fillStyle = '#6a0080';
+      ctx.fillRect(t.x - 12, t.y - 12, 24, 24);
+      const pulse = 0.5 + 0.4 * Math.sin(now / 80 + t.x * 0.1);
+      ctx.strokeStyle = `rgba(213,0,249,${pulse})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(t.x, t.y, 18 + 5 * Math.sin(now / 60), 0, Math.PI * 2); ctx.stroke();
+      if (t.rayTarget && !t.rayTarget.dead && !t.rayTarget.reached) {
+        ctx.globalAlpha = 0.5; ctx.strokeStyle = GODSHOT.color; ctx.lineWidth = 14;
+        ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(t.rayTarget.x, t.rayTarget.y); ctx.stroke();
+        ctx.globalAlpha = 1; ctx.strokeStyle = GODSHOT.color; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(t.rayTarget.x, t.rayTarget.y); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(t.rayTarget.x, t.rayTarget.y); ctx.stroke();
+      }
+      continue;
+    }
+
+    if (t.upgrade === 'leviathan') {
+      ctx.fillStyle = LEVIATHAN.color;
+      ctx.fillRect(t.x - 12, t.y - 12, 24, 24);
+      const pulse = 0.5 + 0.4 * Math.sin(now / 80 + t.x * 0.05);
+      ctx.globalAlpha = pulse * 0.5;
+      ctx.fillStyle = '#4fc3f7';
+      ctx.beginPath(); ctx.arc(t.x, t.y, 32, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#4fc3f7';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(t.x, t.y, 22, 0, Math.PI*2); ctx.stroke();
+      for (let i = 0; i < 8; i++) {
+        const a = (i/8)*Math.PI*2 + now*0.002;
+        ctx.fillStyle = '#e1f5fe';
+        ctx.beginPath(); ctx.arc(t.x + Math.cos(a)*20, t.y + Math.sin(a)*20, 3, 0, Math.PI*2); ctx.fill();
+      }
+      continue;
+    }
+
+    if (t.upgrade === 'broadside') {
+      ctx.fillStyle = BROADSIDE.color;
+      ctx.fillRect(t.x - 12, t.y - 12, 24, 24);
+      const pulse = 0.4 + 0.3 * Math.sin(now / 100 + t.x * 0.08);
+      ctx.globalAlpha = pulse * 0.4;
+      ctx.fillStyle = '#29b6f6';
+      ctx.beginPath(); ctx.arc(t.x, t.y, 26, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#29b6f6';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(t.x, t.y, 18, 0, Math.PI*2); ctx.stroke();
+      for (let i = 0; i < 6; i++) {
+        const a = (i/6)*Math.PI*2 + now*0.0015;
+        ctx.fillStyle = '#b3e5fc';
+        ctx.beginPath(); ctx.arc(t.x + Math.cos(a)*16, t.y + Math.sin(a)*16, 3, 0, Math.PI*2); ctx.fill();
+      }
+      continue;
+    }
+
+    if (t.upgrade === 'cannonade') {
+      ctx.fillStyle = CANNONADE.color;
+      ctx.fillRect(t.x - 12, t.y - 12, 24, 24);
+      const pulse = 0.4 + 0.3 * Math.sin(now / 120 + t.x * 0.1);
+      ctx.strokeStyle = `rgba(41,182,246,${pulse})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(t.x, t.y, 16 + 2 * Math.sin(now / 80), 0, Math.PI*2); ctx.stroke();
+      for (let i = 0; i < 4; i++) {
+        const a = (i/4)*Math.PI*2 + now*0.001;
+        ctx.fillStyle = '#e1f5fe';
+        ctx.beginPath(); ctx.arc(t.x + Math.cos(a)*12, t.y + Math.sin(a)*12, 2.5, 0, Math.PI*2); ctx.fill();
+      }
+      continue;
+    }
+
+    if (t.type === 'warship') {
+      const pulse = 0.4 + 0.35 * Math.sin(now / 110 + t.x * 0.1);
+      ctx.strokeStyle = `rgba(79,195,247,${pulse})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(t.x, t.y, 15 + 2 * Math.sin(now / 80), 0, Math.PI*2); ctx.stroke();
+      ctx.strokeStyle = '#e1f5fe';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(t.x - 8, t.y); ctx.lineTo(t.x + 8, t.y);
+      ctx.moveTo(t.x, t.y - 8); ctx.lineTo(t.x, t.y + 8);
+      ctx.stroke();
       continue;
     }
 
@@ -918,7 +1102,7 @@ function drawTopBar() {
     state.waveActive ? '#607d8b' : '#4caf50');
 
   drawButton(620, 8, 110, 34,
-    activeMap === 0 ? 'Map: Classic' : 'Map: Winding',
+    ['Map: Classic','Map: Winding','Map: Lake'][activeMap],
     state.wave > 0 ? '#1c2a1c' : '#0d2137',
     state.wave > 0 ? '#37474f' : '#4caf50');
 
@@ -984,7 +1168,7 @@ function drawPanel() {
     ctx.font = '9px monospace';
     ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`, tx2, ty + 43);
 
-    const descColor = { tesla:'#fff176', nuke:'#ce93d8', cryo:'#81d4fa', fire:'#ff7043' }[key] || '#80cbc4';
+    const descColor = { tesla:'#fff176', nuke:'#ce93d8', cryo:'#81d4fa', fire:'#ff7043', warship:'#4fc3f7' }[key] || '#80cbc4';
     ctx.fillStyle = descColor;
     ctx.fillText(def.desc, tx2, ty + 57);
 
@@ -997,7 +1181,7 @@ function drawPanel() {
   ctx.fillText('Click grid to place · hover = range', px + PANEL_W/2, ty + 14);
 
   // Upgrade callout box
-  const bx = px + 6, by = ty + 26, bw = PANEL_W - 12, bh = 100;
+  const bx = px + 6, by = ty + 26, bw = PANEL_W - 12, bh = 120;
   ctx.fillStyle = '#0a1520';
   ctx.fillRect(bx, by, bw, bh);
   ctx.strokeStyle = '#2a3a4a';
@@ -1010,15 +1194,19 @@ function drawPanel() {
 
   ctx.font = '9px monospace';
   ctx.fillStyle = '#ce93d8';
-  ctx.fillText('☀ Nuke → Sun God → Supernova', px + PANEL_W/2, by + 28);
+  ctx.fillText('☀ Nuke→Sun God→Supernova', px + PANEL_W/2, by + 27);
   ctx.fillStyle = '#ff6659';
-  ctx.fillText('⚡ Tesla → Death Ray → Omega Ray', px + PANEL_W/2, by + 41);
+  ctx.fillText('⚡ Tesla→Death Ray→Omega Ray', px + PANEL_W/2, by + 40);
   ctx.fillStyle = '#00e5ff';
-  ctx.fillText('❄ Cryo → Permafrost → Abs.Zero', px + PANEL_W/2, by + 54);
+  ctx.fillText('❄ Cryo→Permafrost→Abs.Zero', px + PANEL_W/2, by + 53);
   ctx.fillStyle = '#ff4444';
-  ctx.fillText('🎯 Sniper → Railgun', px + PANEL_W/2, by + 67);
+  ctx.fillText('🎯 Sniper→Railgun→Godshot', px + PANEL_W/2, by + 66);
   ctx.fillStyle = '#ff3300';
-  ctx.fillText('🔥 Fire → Inferno', px + PANEL_W/2, by + 80);
+  ctx.fillText('🔥 Fire→Inferno', px + PANEL_W/2, by + 79);
+  ctx.fillStyle = '#4fc3f7';
+  ctx.fillText('⚓ Warship→Cannonade→Broadside', px + PANEL_W/2, by + 92);
+  ctx.fillStyle = '#0288d1';
+  ctx.fillText('  →Leviathan', px + PANEL_W/2, by + 105);
 }
 
 function drawMiniTower(cx, cy, type, def) {
@@ -1060,6 +1248,17 @@ function drawMiniTower(cx, cy, type, def) {
     ctx.beginPath();
     ctx.arc(cx, cy-8, 3, 0, Math.PI*2);
     ctx.fill();
+  } else if (type === 'warship') {
+    ctx.strokeStyle = '#e1f5fe';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx-6,cy); ctx.lineTo(cx+6,cy);
+    ctx.moveTo(cx,cy-6); ctx.lineTo(cx,cy+6);
+    ctx.stroke();
+    ctx.strokeStyle = def.color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 10, 0, Math.PI*2);
+    ctx.stroke();
   } else {
     const blen = type === 'sniper' ? 16 : 11;
     ctx.fillRect(cx+2, cy-3, blen, 6);
@@ -1079,6 +1278,10 @@ function drawRangeCircle(tower) {
     absolutezero:{ color: ABSOLUTEZERO.color,  range: ABSOLUTEZERO.range * CELL },
     railgun:     { color: RAILGUN.color,       range: RAILGUN.range * CELL },
     inferno:     { color: INFERNO.color,       range: INFERNO.range * CELL },
+    cannonade:   { color: CANNONADE.color,     range: CANNONADE.range * CELL },
+    broadside:   { color: BROADSIDE.color,     range: BROADSIDE.range * CELL },
+    leviathan:   { color: LEVIATHAN.color,     range: LEVIATHAN.range * CELL },
+    godshot:     { color: GODSHOT.color,       range: GODSHOT.range * CELL },
   };
   const color = upg ? upgradeData[upg].color : def.color;
   const range = upg ? upgradeData[upg].range : def.range * CELL;
@@ -1135,10 +1338,39 @@ function drawRangeCircle(tower) {
     ctx.font = '10px monospace'; ctx.fillStyle = '#e0ffff';
     ctx.fillText(`DPS:${ABSOLUTEZERO.dps}  RNG:${ABSOLUTEZERO.range}  SLOW:${Math.round(ABSOLUTEZERO.slowMult*100)}%`, tx, ty - 19);
   } else if (upg === 'railgun') {
+    const can = state.gold >= GODSHOT.cost;
     ctx.font = 'bold 12px monospace'; ctx.fillStyle = RAILGUN.color;
-    ctx.fillText('🎯 RAILGUN', tx, ty - 32);
+    ctx.fillText('🎯 RAILGUN', tx, ty - 45);
     ctx.font = '10px monospace'; ctx.fillStyle = '#ffcdd2';
-    ctx.fillText(`DPS:${RAILGUN.dps}  RNG:${RAILGUN.range}  continuous`, tx, ty - 19);
+    ctx.fillText(`DPS:${RAILGUN.dps}  RNG:${RAILGUN.range}  continuous`, tx, ty - 32);
+    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? GODSHOT.color : '#546e7a';
+    ctx.fillText(`☠ Click → Godshot $${GODSHOT.cost.toLocaleString()}`, tx, ty - 18);
+  } else if (upg === 'godshot') {
+    ctx.font = 'bold 12px monospace'; ctx.fillStyle = GODSHOT.color;
+    ctx.fillText('☠ GODSHOT', tx, ty - 32);
+    ctx.font = '10px monospace'; ctx.fillStyle = '#e040fb';
+    ctx.fillText(`DPS:${GODSHOT.dps.toLocaleString()}  RNG:${GODSHOT.range}  continuous`, tx, ty - 19);
+  } else if (upg === 'cannonade') {
+    const can = state.gold >= BROADSIDE.cost;
+    ctx.font = 'bold 12px monospace'; ctx.fillStyle = CANNONADE.color;
+    ctx.fillText('⚓ CANNONADE', tx, ty - 45);
+    ctx.font = '10px monospace'; ctx.fillStyle = '#e1f5fe';
+    ctx.fillText(`DPS:${CANNONADE.dps.toLocaleString()}  RNG:${CANNONADE.range}  AoE`, tx, ty - 32);
+    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? BROADSIDE.color : '#546e7a';
+    ctx.fillText(`🚢 Click → Broadside $${BROADSIDE.cost.toLocaleString()}`, tx, ty - 18);
+  } else if (upg === 'broadside') {
+    const can = state.gold >= LEVIATHAN.cost;
+    ctx.font = 'bold 12px monospace'; ctx.fillStyle = BROADSIDE.color;
+    ctx.fillText('🚢 BROADSIDE', tx, ty - 45);
+    ctx.font = '10px monospace'; ctx.fillStyle = '#b3e5fc';
+    ctx.fillText(`DPS:${BROADSIDE.dps.toLocaleString()}  RNG:${BROADSIDE.range}  AoE`, tx, ty - 32);
+    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? LEVIATHAN.color : '#546e7a';
+    ctx.fillText(`⚔ Click → Leviathan $${LEVIATHAN.cost.toLocaleString()}`, tx, ty - 18);
+  } else if (upg === 'leviathan') {
+    ctx.font = 'bold 12px monospace'; ctx.fillStyle = LEVIATHAN.color;
+    ctx.fillText('⚔ LEVIATHAN', tx, ty - 32);
+    ctx.font = '10px monospace'; ctx.fillStyle = '#e1f5fe';
+    ctx.fillText(`DPS:${LEVIATHAN.dps.toLocaleString()}  RNG:${LEVIATHAN.range}  AoE`, tx, ty - 19);
   } else if (upg === 'inferno') {
     ctx.font = 'bold 12px monospace'; ctx.fillStyle = INFERNO.color;
     ctx.fillText('🔥 INFERNO', tx, ty - 32);
@@ -1174,12 +1406,18 @@ function drawRangeCircle(tower) {
     ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`, tx, ty - 38);
     ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? INFERNO.color : '#546e7a';
     ctx.fillText(`🔥 Click → Inferno $${INFERNO.cost.toLocaleString()}`, tx, ty - 24);
+  } else if (tower.type === 'warship') {
+    const can = state.gold >= CANNONADE.cost;
+    ctx.font = '10px monospace'; ctx.fillStyle = '#e1f5fe';
+    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`, tx, ty - 38);
+    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? CANNONADE.color : '#546e7a';
+    ctx.fillText(`⚓ Click → Cannonade $${CANNONADE.cost.toLocaleString()}`, tx, ty - 24);
   }
 }
 
 function drawPlacementPreview() {
   const { c, r } = state.hoverCell;
-  if (PATH_SET.has(`${c},${r}`) || hasTower(c, r)) return;
+  if (PATH_SET.has(`${c},${r}`) || LAKE_SET.has(`${c},${r}`) || hasTower(c, r)) return;
   const def = TOWER_TYPES[state.selectedTower];
   const affordable = state.gold >= def.cost;
   ctx.globalAlpha = 0.35;
@@ -1250,7 +1488,7 @@ canvas.addEventListener('click', ev => {
   if (mx >= CW-68 && mx <= CW-10 && my >= 8 && my <= 42) { state.speed = state.speed===1?2:state.speed===2?4:1; return; }
   if (mx >= CW-136 && mx <= CW-74 && my >= 8 && my <= 42) { state.autoStart = !state.autoStart; if (state.autoStart && !state.waveActive) startWave(); return; }
   if (mx >= 620 && mx <= 730 && my >= 8 && my <= 42 && state.wave === 0) {
-    setMap(1 - activeMap); state = createState(); return;
+    setMap((activeMap + 1) % 3); state = createState(); return;
   }
   const wbx = COLS*CELL - 145;
   if (mx >= wbx && mx <= wbx+135 && my >= 8 && my <= 42) { startWave(); return; }
@@ -1267,7 +1505,7 @@ canvas.addEventListener('click', ev => {
 
   if (my >= TOP_H && mx < COLS*CELL) {
     const c = Math.floor(mx/CELL), r = Math.floor((my-TOP_H)/CELL);
-    if (PATH_SET.has(`${c},${r}`)) return;
+    if (PATH_SET.has(`${c},${r}`) || LAKE_SET.has(`${c},${r}`)) return;
     const existing = state.towers.find(t => t.c === c && t.r === r);
     if (existing) {
       if (existing.type === 'nuke' && !existing.upgrade && state.gold >= SUNGOD.cost) {
@@ -1284,8 +1522,16 @@ canvas.addEventListener('click', ev => {
         state.gold -= ABSOLUTEZERO.cost; existing.upgrade = 'absolutezero';
       } else if (existing.type === 'sniper' && !existing.upgrade && state.gold >= RAILGUN.cost) {
         state.gold -= RAILGUN.cost; existing.upgrade = 'railgun';
+      } else if (existing.type === 'sniper' && existing.upgrade === 'railgun' && state.gold >= GODSHOT.cost) {
+        state.gold -= GODSHOT.cost; existing.upgrade = 'godshot';
       } else if (existing.type === 'fire' && !existing.upgrade && state.gold >= INFERNO.cost) {
         state.gold -= INFERNO.cost; existing.upgrade = 'inferno';
+      } else if (existing.type === 'warship' && !existing.upgrade && state.gold >= CANNONADE.cost) {
+        state.gold -= CANNONADE.cost; existing.upgrade = 'cannonade';
+      } else if (existing.type === 'warship' && existing.upgrade === 'cannonade' && state.gold >= BROADSIDE.cost) {
+        state.gold -= BROADSIDE.cost; existing.upgrade = 'broadside';
+      } else if (existing.type === 'warship' && existing.upgrade === 'broadside' && state.gold >= LEVIATHAN.cost) {
+        state.gold -= LEVIATHAN.cost; existing.upgrade = 'leviathan';
       }
       return;
     }
