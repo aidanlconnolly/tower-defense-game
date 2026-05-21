@@ -108,7 +108,6 @@ const ABSOLUTEZERO = { cost:1000000, dps:150,  range:5,  slowMult:0.05, color:'#
 // Warship upgrade chain (AoE continuous, hits ALL enemies in range)
 const CANNONADE    = { cost:8000000,  dps:3000,  range:5,  color:'#29b6f6' };
 const BROADSIDE    = { cost:16000000, dps:5000,  range:6,  color:'#0288d1' };
-const LEVIATHAN    = { cost:40000,   dps:65625,  range:7,  color:'#01579b' };
 // Sniper tier 3 (single-target continuous, range beyond railgun)
 const GODSHOT      = { cost:340000,  dps:131250, range:14, color:'#d500f9' };
 
@@ -267,16 +266,6 @@ function update(dt) {
       }
       t.rayTarget = gsTarget;
       if (gsTarget) { damageEnemyContinuous(gsTarget, GODSHOT.dps * dt); t.aimAngle = Math.atan2(gsTarget.y - t.y, gsTarget.x - t.x); }
-      continue;
-    }
-    if (t.upgrade === 'leviathan') {
-      const lvRange = LEVIATHAN.range * CELL;
-      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= lvRange);
-      for (const e of inRange) { damageEnemyContinuous(e, LEVIATHAN.dps * dt); }
-      if (inRange.length > 0 && Math.random() < 0.18) {
-        const angle = Math.random() * Math.PI * 2, radius = Math.random() * lvRange;
-        state.particles.push({ type:'spark', x:t.x+Math.cos(angle)*radius, y:t.y+Math.sin(angle)*radius, vx:0, vy:-20, life:0.35, maxLife:0.35, color:LEVIATHAN.color, r:5 });
-      }
       continue;
     }
     if (t.upgrade === 'broadside') {
@@ -818,25 +807,6 @@ function drawTowers() {
       continue;
     }
 
-    if (t.upgrade === 'leviathan') {
-      ctx.fillStyle = LEVIATHAN.color;
-      ctx.fillRect(t.x - 12, t.y - 12, 24, 24);
-      const pulse = 0.5 + 0.4 * Math.sin(now / 80 + t.x * 0.05);
-      ctx.globalAlpha = pulse * 0.5;
-      ctx.fillStyle = '#4fc3f7';
-      ctx.beginPath(); ctx.arc(t.x, t.y, 32, 0, Math.PI*2); ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = '#4fc3f7';
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(t.x, t.y, 22, 0, Math.PI*2); ctx.stroke();
-      for (let i = 0; i < 8; i++) {
-        const a = (i/8)*Math.PI*2 + now*0.002;
-        ctx.fillStyle = '#e1f5fe';
-        ctx.beginPath(); ctx.arc(t.x + Math.cos(a)*20, t.y + Math.sin(a)*20, 3, 0, Math.PI*2); ctx.fill();
-      }
-      continue;
-    }
-
     if (t.upgrade === 'broadside') {
       ctx.fillStyle = BROADSIDE.color;
       ctx.fillRect(t.x - 12, t.y - 12, 24, 24);
@@ -1205,8 +1175,6 @@ function drawPanel() {
   ctx.fillText('🔥 Fire→Inferno', px + PANEL_W/2, by + 79);
   ctx.fillStyle = '#4fc3f7';
   ctx.fillText('⚓ Warship→Cannonade→Broadside', px + PANEL_W/2, by + 92);
-  ctx.fillStyle = '#0288d1';
-  ctx.fillText('  →Leviathan', px + PANEL_W/2, by + 105);
 }
 
 function drawMiniTower(cx, cy, type, def) {
@@ -1280,7 +1248,6 @@ function drawRangeCircle(tower) {
     inferno:     { color: INFERNO.color,       range: INFERNO.range * CELL },
     cannonade:   { color: CANNONADE.color,     range: CANNONADE.range * CELL },
     broadside:   { color: BROADSIDE.color,     range: BROADSIDE.range * CELL },
-    leviathan:   { color: LEVIATHAN.color,     range: LEVIATHAN.range * CELL },
     godshot:     { color: GODSHOT.color,       range: GODSHOT.range * CELL },
   };
   const color = upg ? upgradeData[upg].color : def.color;
@@ -1359,18 +1326,10 @@ function drawRangeCircle(tower) {
     ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? BROADSIDE.color : '#546e7a';
     ctx.fillText(`🚢 Click → Broadside $${BROADSIDE.cost.toLocaleString()}`, tx, ty - 18);
   } else if (upg === 'broadside') {
-    const can = state.gold >= LEVIATHAN.cost;
     ctx.font = 'bold 12px monospace'; ctx.fillStyle = BROADSIDE.color;
-    ctx.fillText('🚢 BROADSIDE', tx, ty - 45);
+    ctx.fillText('🚢 BROADSIDE', tx, ty - 32);
     ctx.font = '10px monospace'; ctx.fillStyle = '#b3e5fc';
-    ctx.fillText(`DPS:${BROADSIDE.dps.toLocaleString()}  RNG:${BROADSIDE.range}  AoE`, tx, ty - 32);
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? LEVIATHAN.color : '#546e7a';
-    ctx.fillText(`⚔ Click → Leviathan $${LEVIATHAN.cost.toLocaleString()}`, tx, ty - 18);
-  } else if (upg === 'leviathan') {
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = LEVIATHAN.color;
-    ctx.fillText('⚔ LEVIATHAN', tx, ty - 32);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#e1f5fe';
-    ctx.fillText(`DPS:${LEVIATHAN.dps.toLocaleString()}  RNG:${LEVIATHAN.range}  AoE`, tx, ty - 19);
+    ctx.fillText(`DPS:${BROADSIDE.dps.toLocaleString()}  RNG:${BROADSIDE.range}  AoE`, tx, ty - 19);
   } else if (upg === 'inferno') {
     ctx.font = 'bold 12px monospace'; ctx.fillStyle = INFERNO.color;
     ctx.fillText('🔥 INFERNO', tx, ty - 32);
@@ -1534,8 +1493,6 @@ canvas.addEventListener('click', ev => {
         state.gold -= CANNONADE.cost; existing.upgrade = 'cannonade';
       } else if (existing.type === 'warship' && existing.upgrade === 'cannonade' && state.gold >= BROADSIDE.cost) {
         state.gold -= BROADSIDE.cost; existing.upgrade = 'broadside';
-      } else if (existing.type === 'warship' && existing.upgrade === 'broadside' && state.gold >= LEVIATHAN.cost) {
-        state.gold -= LEVIATHAN.cost; existing.upgrade = 'leviathan';
       }
       return;
     }
