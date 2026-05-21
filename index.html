@@ -1417,7 +1417,10 @@ function drawRangeCircle(tower) {
 
 function drawPlacementPreview() {
   const { c, r } = state.hoverCell;
-  if (PATH_SET.has(`${c},${r}`) || LAKE_SET.has(`${c},${r}`) || hasTower(c, r)) return;
+  const isWater = LAKE_SET.has(`${c},${r}`);
+  if (PATH_SET.has(`${c},${r}`) || hasTower(c, r)) return;
+  if (state.selectedTower === 'warship' && !isWater) return;
+  if (state.selectedTower !== 'warship' && isWater) return;
   const def = TOWER_TYPES[state.selectedTower];
   const affordable = state.gold >= def.cost;
   ctx.globalAlpha = 0.35;
@@ -1505,7 +1508,8 @@ canvas.addEventListener('click', ev => {
 
   if (my >= TOP_H && mx < COLS*CELL) {
     const c = Math.floor(mx/CELL), r = Math.floor((my-TOP_H)/CELL);
-    if (PATH_SET.has(`${c},${r}`) || LAKE_SET.has(`${c},${r}`)) return;
+    if (PATH_SET.has(`${c},${r}`)) return;
+    const isWater = LAKE_SET.has(`${c},${r}`);
     const existing = state.towers.find(t => t.c === c && t.r === r);
     if (existing) {
       if (existing.type === 'nuke' && !existing.upgrade && state.gold >= SUNGOD.cost) {
@@ -1535,6 +1539,9 @@ canvas.addEventListener('click', ev => {
       }
       return;
     }
+    // Warship must be placed on water; all other towers cannot be on water
+    if (state.selectedTower === 'warship' && !isWater) return;
+    if (state.selectedTower !== 'warship' && isWater) return;
     const def = TOWER_TYPES[state.selectedTower];
     if (state.gold < def.cost) return;
     state.gold -= def.cost;
