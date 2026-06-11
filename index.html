@@ -2,11 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Tower Defense</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #1a1a2e; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: monospace; }
-  canvas { display: block; cursor: pointer; }
+  html, body { height: 100%; }
+  body { background: #1a1a2e; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: monospace; overflow: hidden; }
+  /* Canvas keeps its native pixel resolution (width/height attrs); JS sizes the
+     CSS box to fit the viewport while preserving aspect ratio. touch-action:none
+     stops the browser hijacking taps for scroll/zoom so the game gets them. */
+  canvas { display: block; cursor: pointer; touch-action: none; }
 </style>
 </head>
 <body>
@@ -24,6 +29,18 @@ const canvas = document.getElementById('c');
 canvas.width = CW;
 canvas.height = CH;
 const ctx = canvas.getContext('2d');
+
+// Scale the canvas's on-screen size to fit the viewport (preserving aspect ratio,
+// never upscaling past native). The drawing buffer stays CW×CH so all game math is
+// unchanged; only the CSS box shrinks. Pointer handlers convert back via the rect.
+function fitCanvas() {
+  const scale = Math.min(window.innerWidth / CW, window.innerHeight / CH, 1);
+  canvas.style.width = CW * scale + 'px';
+  canvas.style.height = CH * scale + 'px';
+}
+window.addEventListener('resize', fitCanvas);
+window.addEventListener('orientationchange', fitCanvas);
+fitCanvas();
 
 const PATHS = [
   [ // Classic
@@ -1583,23 +1600,64 @@ function drawGameOver() {
 
 function hasTower(c, r) { return state.towers.some(t => t.c === c && t.r === r); }
 
-canvas.addEventListener('mousemove', ev => {
+// Map a client (CSS-pixel) point to canvas-buffer coordinates. The canvas is scaled
+// down by fitCanvas(), so rect.width !== CW on small screens — rescale to compensate.
+function toCanvasCoords(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
-  const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+  return {
+    mx: (clientX - rect.left) * (CW / rect.width),
+    my: (clientY - rect.top) * (CH / rect.height),
+  };
+}
+
+function handleHover(mx, my) {
   state.hoverCell = (my >= TOP_H && mx < COLS*CELL)
     ? { c: Math.floor(mx/CELL), r: Math.floor((my-TOP_H)/CELL) } : null;
   state.hoveredTower = null;
   for (const t of state.towers) {
     if (Math.abs(mx-t.x) < CELL/2 && Math.abs(my-t.y) < CELL/2) { state.hoveredTower = t; break; }
   }
+}
+
+canvas.addEventListener('mousemove', ev => {
+  const { mx, my } = toCanvasCoords(ev.clientX, ev.clientY);
+  handleHover(mx, my);
 });
 
 canvas.addEventListener('mouseleave', () => { state.hoverCell = null; state.hoveredTower = null; });
 
-canvas.addEventListener('click', ev => {
-  const rect = canvas.getBoundingClientRect();
-  const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+// Touch: a finger has no hover, so while it's down we show the range/placement
+// preview under it; lifting performs the tap (place/upgrade/button). preventDefault
+// stops the synthetic mouse "click" from firing the tap a second time.
+canvas.addEventListener('touchstart', ev => {
+  ev.preventDefault();
+  const t = ev.touches[0];
+  const { mx, my } = toCanvasCoords(t.clientX, t.clientY);
+  handleHover(mx, my);
+}, { passive: false });
 
+canvas.addEventListener('touchmove', ev => {
+  ev.preventDefault();
+  const t = ev.touches[0];
+  const { mx, my } = toCanvasCoords(t.clientX, t.clientY);
+  handleHover(mx, my);
+}, { passive: false });
+
+canvas.addEventListener('touchend', ev => {
+  ev.preventDefault();
+  const t = ev.changedTouches[0];
+  const { mx, my } = toCanvasCoords(t.clientX, t.clientY);
+  handleTap(mx, my);
+  state.hoverCell = null;
+  state.hoveredTower = null;
+}, { passive: false });
+
+canvas.addEventListener('click', ev => {
+  const { mx, my } = toCanvasCoords(ev.clientX, ev.clientY);
+  handleTap(mx, my);
+});
+
+function handleTap(mx, my) {
   if (state.gameOver) {
     if (mx >= CW/2-75 && mx <= CW/2+75 && my >= CH/2+30 && my <= CH/2+74) state = createState();
     return;
@@ -1679,7 +1737,7 @@ canvas.addEventListener('click', ev => {
     state.gold -= def.cost;
     state.towers.push({ c, r, x:c*CELL+CELL/2, y:r*CELL+TOP_H+CELL/2, type:state.selectedTower, cooldown:0, aimAngle:0 });
   }
-});
+}
 
 // ─── Game Loop ────────────────────────────────────────────────────────────────
 
