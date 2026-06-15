@@ -124,27 +124,48 @@ const TOWER_TYPES = {
   fire:    { name:'Fire',    color:'#ff7043', cost:175,  dmg:25,  range:3.5, rate:0.9,  splash:1.2, burnDps:15, burnDur:3, slowMult:0, slowDur:0, desc:'Burns + splash'      },
   cryo:    { name:'Cryo',    color:'#81d4fa', cost:250,  dmg:20,  range:3.5, rate:0.75, splash:1.5, burnDps:0,  burnDur:0, slowMult:0.3, slowDur:3, desc:'Slows to 30% speed' },
   nuke:    { name:'Nuke',    color:'#ce93d8', cost:600,  dmg:450, range:7,   rate:0.1,  splash:6,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Catastrophic AoE'   },
-  tesla:   { name:'Tesla',   color:'#fff176', cost:2000, dmg:70,  range:3,   rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Zaps ALL in range'   },
-  warship: { name:'Warship', color:'#4fc3f7', cost:4000, dmg:350, range:4,   rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Naval AoE, 5× Tesla' },
-  god:     { name:'God',     color:'#fffde7', cost:4000, dmg:140, range:6,   rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Divine AoE, 2× Tesla' },
+  tesla:   { name:'Tesla',   color:'#fff176', cost:1500, dmg:70,  range:3,   rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Zaps ALL in range'   },
+  warship: { name:'Warship', color:'#4fc3f7', cost:2800, dmg:350, range:4,   rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Naval AoE, 5× Tesla' },
+  god:     { name:'God',     color:'#fffde7', cost:2800, dmg:140, range:6,   rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Divine AoE, 2× Tesla' },
 };
 
-const SUNGOD       = { cost:100000,  dmg:350,  rate:1.2, range:12,  color:'#ffd700' };
-const DEATHRAY     = { cost:200000,  dps:900,  range:8,             color:'#ff1744' };
-const PERMAFROST   = { cost:300000,  dps:50,   range:4.5, slowMult:0.1, color:'#00e5ff' };
-const RAILGUN      = { cost:500000,  dps:400,  range:11,            color:'#ff4444' };
-const INFERNO      = { cost:350000,  dps:120,  range:2.5,           color:'#ff3300' };
-const SUPERNOVA    = { cost:400000,  dmg:1050, rate:1.2, range:12,  color:'#ff8c00' };
-const OMEGARAY     = { cost:500000,  dps:2700, range:8,             color:'#ff0055' };
-const ABSOLUTEZERO = { cost:1000000, dps:150,  range:5,  slowMult:0.05, color:'#00ffee' };
-// Warship upgrade chain (AoE continuous, hits ALL enemies in range)
-const CANNONADE    = { cost:8000000,  dps:3000,  range:5,  color:'#29b6f6' };
-const BROADSIDE    = { cost:16000000, dps:5000,  range:6,  color:'#0288d1' };
-// Sniper tier 3 (single-target continuous, range beyond railgun)
-const GODSHOT      = { cost:25000000, dps:10000, range:14, color:'#d500f9' };
-// God upgrade chain (continuous AoE, 2× Tesla chain)
-const GODRAY       = { cost:400000,   dps:1800,  range:8,  color:'#ffeb3b' };
-const DIVINITY     = { cost:1000000,  dps:5400,  range:8,  color:'#fff59d' };
+// Upgrade definitions. `mode` drives firing behaviour:
+//   'rate' — AoE on a cooldown (uses `dmg`,`rate`); 'beam' — continuous single-target (`dps`);
+//   'aoe'  — continuous all-in-range (`dps`, optional `slowMult`/`burn`).
+const SUNGOD       = { mode:'rate', name:'SUN GOD',       icon:'☀', cost:6000,   dmg:350,  rate:1.2, range:12,  color:'#ffd700' };
+const SUPERNOVA    = { mode:'rate', name:'SUPERNOVA',     icon:'💥', cost:25000,  dmg:1050, rate:1.2, range:12,  color:'#ff8c00' };
+const DEATHRAY     = { mode:'beam', name:'DEATH RAY',     icon:'⚡', cost:5000,   dps:900,  range:8,             color:'#ff1744' };
+const OMEGARAY     = { mode:'beam', name:'OMEGA RAY',     icon:'☄', cost:22000,  dps:2700, range:8,             color:'#ff0055' };
+const RAILGUN      = { mode:'beam', name:'RAILGUN',       icon:'🎯', cost:7000,   dps:400,  range:11,            color:'#ff4444' };
+const GODSHOT      = { mode:'beam', name:'GODSHOT',       icon:'☠', cost:60000,  dps:10000,range:14,            color:'#d500f9' };
+const PERMAFROST   = { mode:'aoe',  name:'PERMAFROST',    icon:'❄', cost:4500,   dps:50,   range:4.5, slowMult:0.1,  color:'#00e5ff' };
+const ABSOLUTEZERO = { mode:'aoe',  name:'ABSOLUTE ZERO', icon:'🧊', cost:20000,  dps:150,  range:5,   slowMult:0.05, color:'#00ffee' };
+const INFERNO      = { mode:'aoe',  name:'INFERNO',       icon:'🔥', cost:5000,   dps:120,  range:2.5, burn:true,     color:'#ff3300' };
+const CANNONADE    = { mode:'aoe',  name:'CANNONADE',     icon:'⚓', cost:12000,  dps:3000, range:5,   color:'#29b6f6' };
+const BROADSIDE    = { mode:'aoe',  name:'BROADSIDE',     icon:'🚢', cost:45000,  dps:5000, range:6,   color:'#0288d1' };
+const GODRAY       = { mode:'aoe',  name:'GOD RAY',       icon:'✦', cost:10000,  dps:1800, range:8,   color:'#ffeb3b' };
+const DIVINITY     = { mode:'aoe',  name:'DIVINITY',      icon:'✧', cost:40000,  dps:5400, range:8,   color:'#fff59d' };
+
+// Lookup by upgrade key + the per-base-tower upgrade chains (ordered tiers).
+const UPGRADE_DEFS = {
+  sungod:SUNGOD, supernova:SUPERNOVA, deathray:DEATHRAY, omegaray:OMEGARAY,
+  permafrost:PERMAFROST, absolutezero:ABSOLUTEZERO, railgun:RAILGUN, godshot:GODSHOT,
+  inferno:INFERNO, cannonade:CANNONADE, broadside:BROADSIDE, godray:GODRAY, divinity:DIVINITY,
+};
+const UPGRADE_TREE = {
+  nuke:['sungod','supernova'], tesla:['deathray','omegaray'], cryo:['permafrost','absolutezero'],
+  sniper:['railgun','godshot'], fire:['inferno'], warship:['cannonade','broadside'], god:['godray','divinity'],
+};
+
+// Enemy archetypes. Boss is handled separately (isBoss flag).
+const ENEMY_TYPES = {
+  normal: { hpMul:1,   speedMul:1,    r:10, color:'#e53935', stroke:'#b71c1c' },
+  fast:   { hpMul:0.5, speedMul:1.8,  r:8,  color:'#aeea00', stroke:'#827717' },
+  tank:   { hpMul:3,   speedMul:0.55, r:14, color:'#607d8b', stroke:'#263238' },
+};
+
+let bestWave = 0;
+try { bestWave = +(localStorage.getItem('td_best') || 0) || 0; } catch (e) {}
 
 let state = createState();
 
@@ -153,10 +174,10 @@ function createState() {
     gold: 200, lives: 20, wave: 0,
     waveActive: false, waveSpawned: 0, waveTotal: 0, spawnTimer: 0,
     waveHasBoss: false, bossSpawned: false,
-    autoStart: false,
+    autoStart: false, paused: false,
     speed: 1, selectedTower: 'sniper',
     towers: [], enemies: [], projectiles: [], particles: [],
-    hoverCell: null, hoveredTower: null,
+    hoverCell: null, hoveredTower: null, selectedPlacedTower: null,
     mapDropdownOpen: false,
     gameOver: false, lastTime: 0,
   };
@@ -173,27 +194,41 @@ function startWave() {
   state.spawnTimer = 0;
 }
 
-function spawnEnemy(isBoss) {
-  const hp = Math.round(60 * Math.pow(1.35, state.wave - 1));
-  const speed = 55 + state.wave * 3;
-  if (isBoss) {
-    const bossHp = hp * 15;
+// Base HP for the current wave — gentle exponential so the game stays winnable.
+function waveHp(wave) { return Math.round(50 * Math.pow(1.20, wave - 1)); }
+
+// Weighted pick of a non-boss archetype; variety ramps up as waves progress.
+function pickEnemyKind() {
+  const w = state.wave, r = Math.random();
+  if (w < 3) return 'normal';
+  if (w < 6) return r < 0.7 ? 'normal' : 'fast';
+  if (w < 10) return r < 0.55 ? 'normal' : r < 0.8 ? 'fast' : 'tank';
+  return r < 0.45 ? 'normal' : r < 0.75 ? 'fast' : 'tank';
+}
+
+function spawnEnemy(kind) {
+  const base = waveHp(state.wave);
+  const speed = 52 + state.wave * 2.5;
+  if (kind === 'boss') {
+    const bossHp = Math.round(base * 14);
     state.enemies.push({
       x: WAYPOINTS[0].x, y: WAYPOINTS[0].y,
-      wpIdx: 0, hp: bossHp, maxHp: bossHp, speed: speed * 0.6,
-      gold: Math.ceil(bossHp / 5), r: 22,
-      dead: false, reached: false, flash: 0,
-      burnDps: 0, burnTimer: 0, slowMult: 1.0, slowTimer: 0, isBoss: true,
-    });
-  } else {
-    state.enemies.push({
-      x: WAYPOINTS[0].x, y: WAYPOINTS[0].y,
-      wpIdx: 0, hp, maxHp: hp, speed,
-      gold: Math.ceil(hp / 10), r: 10,
+      wpIdx: 0, hp: bossHp, maxHp: bossHp, speed: speed * 0.55,
+      gold: Math.ceil(bossHp / 6), r: 22, etype: 'boss', isBoss: true,
       dead: false, reached: false, flash: 0,
       burnDps: 0, burnTimer: 0, slowMult: 1.0, slowTimer: 0,
     });
+    return;
   }
+  const et = ENEMY_TYPES[kind] || ENEMY_TYPES.normal;
+  const hp = Math.max(1, Math.round(base * et.hpMul));
+  state.enemies.push({
+    x: WAYPOINTS[0].x, y: WAYPOINTS[0].y,
+    wpIdx: 0, hp, maxHp: hp, speed: speed * et.speedMul,
+    gold: Math.ceil(hp / 10), r: et.r, etype: kind,
+    dead: false, reached: false, flash: 0,
+    burnDps: 0, burnTimer: 0, slowMult: 1.0, slowTimer: 0,
+  });
 }
 
 function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
@@ -247,10 +282,10 @@ function update(dt) {
     state.spawnTimer -= dt;
     if (state.spawnTimer <= 0) {
       if (state.waveHasBoss && !state.bossSpawned) {
-        spawnEnemy(true);
+        spawnEnemy('boss');
         state.bossSpawned = true;
       } else {
-        spawnEnemy();
+        spawnEnemy(pickEnemyKind());
       }
       state.waveSpawned++;
       state.spawnTimer = 0.9 - Math.min(0.5, state.wave * 0.03);
@@ -282,7 +317,13 @@ function update(dt) {
       if (e.wpIdx >= WAYPOINTS.length) {
         e.reached = true;
         state.lives = Math.max(0, state.lives - 1);
-        if (state.lives <= 0) state.gameOver = true;
+        if (state.lives <= 0 && !state.gameOver) {
+          state.gameOver = true;
+          if (state.wave > bestWave) {
+            bestWave = state.wave;
+            try { localStorage.setItem('td_best', bestWave); } catch (e) {}
+          }
+        }
       }
     } else {
       const nx = (target.x - e.x) / d, ny = (target.y - e.y) / d;
@@ -293,121 +334,31 @@ function update(dt) {
 
   // Towers shoot
   for (const t of state.towers) {
-    // Continuous upgrades — bypass cooldown system
-    if (t.upgrade === 'godshot') {
-      const gsRange = GODSHOT.range * CELL;
-      let gsTarget = null, bestWp = -1;
+    // Continuous-fire upgrades bypass the cooldown system.
+    const u = t.upgrade ? UPGRADE_DEFS[t.upgrade] : null;
+    if (u && u.mode === 'beam') {
+      // Single-target beam: lock onto the furthest-along enemy in range.
+      const range = u.range * CELL;
+      let tgt = null, bestWp = -1;
       for (const e of state.enemies) {
-        if (!e.dead && !e.reached && dist(t, e) <= gsRange && e.wpIdx > bestWp) { gsTarget = e; bestWp = e.wpIdx; }
+        if (!e.dead && !e.reached && dist(t, e) <= range && e.wpIdx > bestWp) { tgt = e; bestWp = e.wpIdx; }
       }
-      t.rayTarget = gsTarget;
-      if (gsTarget) { damageEnemyContinuous(gsTarget, GODSHOT.dps * dt); t.aimAngle = Math.atan2(gsTarget.y - t.y, gsTarget.x - t.x); }
+      t.rayTarget = tgt;
+      if (tgt) { damageEnemyContinuous(tgt, u.dps * dt); t.aimAngle = Math.atan2(tgt.y - t.y, tgt.x - t.x); }
       continue;
     }
-    if (t.upgrade === 'divinity') {
-      const dvRange = DIVINITY.range * CELL;
-      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= dvRange);
-      for (const e of inRange) { damageEnemyContinuous(e, DIVINITY.dps * dt); }
-      if (inRange.length > 0 && Math.random() < 0.18) {
-        const angle = Math.random() * Math.PI * 2, radius = Math.random() * dvRange;
-        state.particles.push({ type:'spark', x:t.x+Math.cos(angle)*radius, y:t.y+Math.sin(angle)*radius, vx:0, vy:-22, life:0.45, maxLife:0.45, color:DIVINITY.color, r:5 });
-      }
-      continue;
-    }
-    if (t.upgrade === 'godray') {
-      const grRange = GODRAY.range * CELL;
-      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= grRange);
-      for (const e of inRange) { damageEnemyContinuous(e, GODRAY.dps * dt); }
-      if (inRange.length > 0 && Math.random() < 0.16) {
-        const angle = Math.random() * Math.PI * 2, radius = Math.random() * grRange;
-        state.particles.push({ type:'spark', x:t.x+Math.cos(angle)*radius, y:t.y+Math.sin(angle)*radius, vx:0, vy:-20, life:0.4, maxLife:0.4, color:GODRAY.color, r:4 });
-      }
-      continue;
-    }
-    if (t.upgrade === 'broadside') {
-      const bsRange = BROADSIDE.range * CELL;
-      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= bsRange);
-      for (const e of inRange) { damageEnemyContinuous(e, BROADSIDE.dps * dt); }
-      if (inRange.length > 0 && Math.random() < 0.15) {
-        const angle = Math.random() * Math.PI * 2, radius = Math.random() * bsRange;
-        state.particles.push({ type:'spark', x:t.x+Math.cos(angle)*radius, y:t.y+Math.sin(angle)*radius, vx:0, vy:-20, life:0.3, maxLife:0.3, color:BROADSIDE.color, r:4 });
-      }
-      continue;
-    }
-    if (t.upgrade === 'cannonade') {
-      const cnRange = CANNONADE.range * CELL;
-      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= cnRange);
-      for (const e of inRange) { damageEnemyContinuous(e, CANNONADE.dps * dt); }
-      if (inRange.length > 0 && Math.random() < 0.13) {
-        const angle = Math.random() * Math.PI * 2, radius = Math.random() * cnRange;
-        state.particles.push({ type:'spark', x:t.x+Math.cos(angle)*radius, y:t.y+Math.sin(angle)*radius, vx:0, vy:-18, life:0.28, maxLife:0.28, color:CANNONADE.color, r:4 });
-      }
-      continue;
-    }
-    if (t.upgrade === 'omegaray') {
-      const orRange = OMEGARAY.range * CELL;
-      let orTarget = null, bestWp = -1;
-      for (const e of state.enemies) {
-        if (!e.dead && !e.reached && dist(t, e) <= orRange && e.wpIdx > bestWp) { orTarget = e; bestWp = e.wpIdx; }
-      }
-      t.rayTarget = orTarget;
-      if (orTarget) { damageEnemyContinuous(orTarget, OMEGARAY.dps * dt); t.aimAngle = Math.atan2(orTarget.y - t.y, orTarget.x - t.x); }
-      continue;
-    }
-    if (t.upgrade === 'railgun') {
-      const rlRange = RAILGUN.range * CELL;
-      let rlTarget = null, bestWp = -1;
-      for (const e of state.enemies) {
-        if (!e.dead && !e.reached && dist(t, e) <= rlRange && e.wpIdx > bestWp) { rlTarget = e; bestWp = e.wpIdx; }
-      }
-      t.rayTarget = rlTarget;
-      if (rlTarget) { damageEnemyContinuous(rlTarget, RAILGUN.dps * dt); t.aimAngle = Math.atan2(rlTarget.y - t.y, rlTarget.x - t.x); }
-      continue;
-    }
-    if (t.upgrade === 'inferno') {
-      const ifRange = INFERNO.range * CELL;
-      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= ifRange);
-      for (const e of inRange) { applyBurn(e, INFERNO.dps, 0.25); damageEnemyContinuous(e, INFERNO.dps * dt); }
-      if (inRange.length > 0 && Math.random() < 0.15) {
-        const angle = Math.random() * Math.PI * 2, radius = Math.random() * ifRange;
-        state.particles.push({ type:'spark', x:t.x+Math.cos(angle)*radius, y:t.y+Math.sin(angle)*radius, vx:0, vy:-20, life:0.4, maxLife:0.4, color:INFERNO.color, r:4 });
-      }
-      continue;
-    }
-    if (t.upgrade === 'absolutezero') {
-      const azRange = ABSOLUTEZERO.range * CELL;
-      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= azRange);
-      for (const e of inRange) { applySlow(e, ABSOLUTEZERO.slowMult, 0.25); damageEnemyContinuous(e, ABSOLUTEZERO.dps * dt); }
-      if (inRange.length > 0 && Math.random() < 0.12) {
-        const angle = Math.random() * Math.PI * 2, radius = Math.random() * azRange;
-        state.particles.push({ type:'spark', x:t.x+Math.cos(angle)*radius, y:t.y+Math.sin(angle)*radius, vx:0, vy:-15, life:0.5, maxLife:0.5, color:ABSOLUTEZERO.color, r:3 });
-      }
-      continue;
-    }
-    if (t.upgrade === 'deathray') {
-      const drRange = DEATHRAY.range * CELL;
-      let drTarget = null, bestWp = -1;
-      for (const e of state.enemies) {
-        if (!e.dead && !e.reached && dist(t, e) <= drRange && e.wpIdx > bestWp) { drTarget = e; bestWp = e.wpIdx; }
-      }
-      t.rayTarget = drTarget;
-      if (drTarget) {
-        damageEnemyContinuous(drTarget, DEATHRAY.dps * dt);
-        t.aimAngle = Math.atan2(drTarget.y - t.y, drTarget.x - t.x);
-      }
-      continue;
-    }
-    if (t.upgrade === 'permafrost') {
-      const pfRange = PERMAFROST.range * CELL;
-      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= pfRange);
+    if (u && u.mode === 'aoe') {
+      // Continuous AoE: damage everything in range, plus optional slow/burn.
+      const range = u.range * CELL;
+      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= range);
       for (const e of inRange) {
-        applySlow(e, PERMAFROST.slowMult, 0.25);
-        damageEnemyContinuous(e, PERMAFROST.dps * dt);
+        if (u.slowMult != null) applySlow(e, u.slowMult, 0.25);
+        if (u.burn) applyBurn(e, u.dps, 0.25);
+        damageEnemyContinuous(e, u.dps * dt);
       }
-      if (inRange.length > 0 && Math.random() < 0.12) {
-        const angle = Math.random() * Math.PI * 2;
-        const radius = Math.random() * pfRange;
-        state.particles.push({ type:'spark', x:t.x+Math.cos(angle)*radius, y:t.y+Math.sin(angle)*radius, vx:0, vy:-15, life:0.5, maxLife:0.5, color:PERMAFROST.color, r:3 });
+      if (inRange.length > 0 && Math.random() < 0.14) {
+        const angle = Math.random() * Math.PI * 2, radius = Math.random() * range;
+        state.particles.push({ type:'spark', x:t.x+Math.cos(angle)*radius, y:t.y+Math.sin(angle)*radius, vx:0, vy:-18, life:0.4, maxLife:0.4, color:u.color, r:4 });
       }
       continue;
     }
@@ -417,30 +368,17 @@ function update(dt) {
     const def = TOWER_TYPES[t.type];
     const rangePixels = def.range * CELL;
 
-    // Sun God
-    if (t.upgrade === 'sungod') {
-      const sgRange = SUNGOD.range * CELL;
-      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= sgRange);
+    // Rate-based AoE upgrades (Sun God / Supernova): zap all in range on a cooldown.
+    if (u && u.mode === 'rate') {
+      const range = u.range * CELL;
+      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= range);
       if (inRange.length === 0) continue;
-      t.cooldown = 1 / SUNGOD.rate;
+      t.cooldown = 1 / u.rate;
       for (const e of inRange) {
-        damageEnemy(e, SUNGOD.dmg);
-        state.particles.push({ type:'arc', x1:t.x, y1:t.y, x2:e.x, y2:e.y, life:0.08, maxLife:0.08, color:'rgba(255,215,0,0.55)' });
+        damageEnemy(e, u.dmg);
+        state.particles.push({ type:'arc', x1:t.x, y1:t.y, x2:e.x, y2:e.y, life:0.08, maxLife:0.08, color:u.color });
       }
-      state.particles.push({ type:'ring', x:t.x, y:t.y, r:0, maxR:sgRange, life:0.18, maxLife:0.18, color:'rgba(255,215,0,0.45)' });
-      continue;
-    }
-    // Supernova
-    if (t.upgrade === 'supernova') {
-      const snRange = SUPERNOVA.range * CELL;
-      const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= snRange);
-      if (inRange.length === 0) continue;
-      t.cooldown = 1 / SUPERNOVA.rate;
-      for (const e of inRange) {
-        damageEnemy(e, SUPERNOVA.dmg);
-        state.particles.push({ type:'arc', x1:t.x, y1:t.y, x2:e.x, y2:e.y, life:0.08, maxLife:0.08, color:'rgba(255,140,0,0.75)' });
-      }
-      state.particles.push({ type:'ring', x:t.x, y:t.y, r:0, maxR:snRange, life:0.18, maxLife:0.18, color:'rgba(255,140,0,0.55)' });
+      state.particles.push({ type:'ring', x:t.x, y:t.y, r:0, maxR:range, life:0.18, maxLife:0.18, color:u.color });
       continue;
     }
 
@@ -481,14 +419,7 @@ function update(dt) {
     t.cooldown = 1 / def.rate;
     t.aimAngle = Math.atan2(target.y - t.y, target.x - t.x);
 
-    if (t.type === 'splash') {
-      // Instant AoE
-      const splashR = def.splash * CELL;
-      for (const e of state.enemies) {
-        if (!e.dead && !e.reached && dist({x:target.x,y:target.y}, e) <= splashR) damageEnemy(e, def.dmg);
-      }
-      state.particles.push({ type:'ring', x:target.x, y:target.y, r:0, maxR:splashR, life:0.3, maxLife:0.3, color:def.color });
-    } else if (t.type === 'nuke') {
+    if (t.type === 'nuke') {
       // Slow missile that detonates
       state.projectiles.push({
         ptype:'nuke', x:t.x, y:t.y, tx:target.x, ty:target.y, target,
@@ -584,7 +515,7 @@ function update(dt) {
 
   if (state.waveActive && state.waveSpawned >= state.waveTotal && state.enemies.length === 0) {
     state.waveActive = false;
-    state.gold += 25 + state.wave * 5;
+    state.gold += 40 + state.wave * 8;
     if (state.autoStart) startWave();
   }
 }
@@ -602,7 +533,11 @@ function draw() {
   drawParticles();
   drawTopBar();
   drawPanel();
-  if (state.hoveredTower) drawRangeCircle(state.hoveredTower);
+  const infoTower = state.selectedPlacedTower || state.hoveredTower;
+  if (infoTower) drawRangeCircle(infoTower);
+  if (state.selectedPlacedTower && state.towers.includes(state.selectedPlacedTower)) {
+    drawTowerActions(state.selectedPlacedTower);
+  }
   if (state.hoverCell && !state.gameOver) drawPlacementPreview();
   if (state.gameOver) drawGameOver();
   if (state.mapDropdownOpen) drawMapDropdown();
@@ -1098,9 +1033,10 @@ function drawEnemies() {
       ctx.textAlign = 'center';
       ctx.fillText('BOSS', e.x, e.y + 3);
     } else {
-      ctx.fillStyle = e.flash > 0 ? '#fff' : (frozen ? '#b3e5fc' : '#e53935');
+      const et = ENEMY_TYPES[e.etype] || ENEMY_TYPES.normal;
+      ctx.fillStyle = e.flash > 0 ? '#fff' : (frozen ? '#b3e5fc' : et.color);
       ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = frozen ? '#0288d1' : '#b71c1c';
+      ctx.strokeStyle = frozen ? '#0288d1' : et.stroke;
       ctx.lineWidth = 2;
       ctx.stroke();
       const wp = WAYPOINTS[Math.min(e.wpIdx, WAYPOINTS.length - 1)];
@@ -1183,7 +1119,20 @@ function drawParticles() {
   }
 }
 
+// Single source of truth for top-bar button hit regions — used by both draw and input.
+function topBarButtons() {
+  return {
+    map:   { x: 620,            y: 8, w: 130, h: 34 },
+    start: { x: COLS*CELL - 145, y: 8, w: 135, h: 34 },
+    pause: { x: CW - 204,       y: 8, w: 62,  h: 34 },
+    auto:  { x: CW - 136,       y: 8, w: 62,  h: 34 },
+    speed: { x: CW - 68,        y: 8, w: 58,  h: 34 },
+  };
+}
+function inRect(mx, my, r) { return mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h; }
+
 function drawTopBar() {
+  const B = topBarButtons();
   ctx.fillStyle = '#1a237e';
   ctx.fillRect(0, 0, CW, TOP_H);
   ctx.strokeStyle = '#3949ab';
@@ -1197,34 +1146,37 @@ function drawTopBar() {
   ctx.fillStyle = state.lives > 5 ? '#a5d6a7' : '#ef9a9a';
   ctx.fillText(`Lives: ${state.lives}`, 155, 32);
   ctx.fillStyle = '#fff176';
-  ctx.fillText(`Gold: ${state.gold}`, 300, 32);
+  ctx.fillText(`Gold: ${state.gold.toLocaleString()}`, 300, 32);
   if (state.waveActive) {
     ctx.fillStyle = '#ffcc80';
-    ctx.fillText(`Enemies: ${state.waveTotal - state.waveSpawned + state.enemies.length}`, 455, 32);
+    ctx.fillText(`Enemies: ${state.waveTotal - state.waveSpawned + state.enemies.length}`, 480, 32);
   } else if (state.wave > 0) {
     ctx.fillStyle = '#a5d6a7';
-    ctx.fillText(`+${25 + state.wave * 5}g bonus!`, 455, 32);
+    ctx.fillText(`+${40 + state.wave * 8}g bonus!`, 480, 32);
   }
 
-  drawButton(COLS*CELL - 145, 8, 135, 34,
+  drawButton(B.start.x, B.start.y, B.start.w, B.start.h,
     state.waveActive ? `Wave ${state.wave} active` : `Start Wave ${state.wave+1}`,
     state.waveActive ? '#37474f' : '#1b5e20',
     state.waveActive ? '#607d8b' : '#4caf50');
 
   const mapBtnEnabled = state.wave === 0;
-  const mapLabel = `Map: ${MAP_NAMES[activeMap]} ▾`;
-  drawButton(620, 8, 130, 34, mapLabel,
+  drawButton(B.map.x, B.map.y, B.map.w, B.map.h, `Map: ${MAP_NAMES[activeMap]} ▾`,
     mapBtnEnabled ? '#0d2137' : '#1c2a1c',
     mapBtnEnabled ? '#4caf50' : '#37474f');
 
-  drawButton(CW - 68, 8, 58, 34,
+  drawButton(B.speed.x, B.speed.y, B.speed.w, B.speed.h,
     state.speed === 1 ? '1x' : state.speed === 2 ? '2x' : '4x',
     state.speed === 1 ? '#1a237e' : state.speed === 2 ? '#4a1080' : '#7b1a00',
     state.speed === 1 ? '#3f51b5' : state.speed === 2 ? '#9c27b0' : '#ff5722');
 
-  drawButton(CW - 136, 8, 62, 34, 'Auto',
+  drawButton(B.auto.x, B.auto.y, B.auto.w, B.auto.h, 'Auto',
     state.autoStart ? '#1b3a1b' : '#1a237e',
     state.autoStart ? '#4caf50' : '#37474f');
+
+  drawButton(B.pause.x, B.pause.y, B.pause.w, B.pause.h, state.paused ? '►' : 'II',
+    state.paused ? '#3a2a10' : '#1a237e',
+    state.paused ? '#ffb300' : '#37474f');
 }
 
 function drawButton(x, y, w, h, label, bg, border) {
@@ -1286,13 +1238,14 @@ function drawPanel() {
     ty += CARD_H + CARD_GAP;
   }
 
-  ctx.fillStyle = '#37474f';
+  ctx.fillStyle = '#607d8b';
   ctx.font = '9px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('Click grid to place · hover = range', px + PANEL_W/2, ty + 14);
+  ctx.fillText('Tap grid to place · tap tower to', px + PANEL_W/2, ty + 12);
+  ctx.fillText('upgrade or sell (70% refund)', px + PANEL_W/2, ty + 22);
 
   // Upgrade callout box
-  const bx = px + 6, by = ty + 26, bw = PANEL_W - 12, bh = 133;
+  const bx = px + 6, by = ty + 32, bw = PANEL_W - 12, bh = 133;
   ctx.fillStyle = '#0a1520';
   ctx.fillRect(bx, by, bw, bh);
   ctx.strokeStyle = '#2a3a4a';
@@ -1301,7 +1254,7 @@ function drawPanel() {
 
   ctx.font = 'bold 10px monospace';
   ctx.fillStyle = '#90caf9';
-  ctx.fillText('UPGRADES — HOVER TO BUY', px + PANEL_W/2, by + 13);
+  ctx.fillText('UPGRADE CHAINS', px + PANEL_W/2, by + 13);
 
   ctx.font = '9px monospace';
   ctx.fillStyle = '#ce93d8';
@@ -1386,27 +1339,21 @@ function drawMiniTower(cx, cy, type, def) {
   }
 }
 
+// Stat line shown above a hovered/selected tower.
+function upgradeStatLine(key) {
+  const u = UPGRADE_DEFS[key];
+  if (u.mode === 'rate') return `DMG:${u.dmg}  RNG:${u.range}  ${(1/u.rate).toFixed(1)}s reload`;
+  const tail = u.slowMult != null ? `SLOW:${Math.round(u.slowMult*100)}%`
+             : (u.mode === 'aoe' ? 'AoE' : 'continuous');
+  return `DPS:${u.dps.toLocaleString()}  RNG:${u.range}  ${tail}`;
+}
+function baseStatLine(def) { return `DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`; }
+
 function drawRangeCircle(tower) {
   const def = TOWER_TYPES[tower.type];
-  const upg = tower.upgrade;
-
-  const upgradeData = {
-    sungod:      { color: SUNGOD.color,       range: SUNGOD.range * CELL },
-    supernova:   { color: SUPERNOVA.color,     range: SUPERNOVA.range * CELL },
-    deathray:    { color: DEATHRAY.color,      range: DEATHRAY.range * CELL },
-    omegaray:    { color: OMEGARAY.color,      range: OMEGARAY.range * CELL },
-    permafrost:  { color: PERMAFROST.color,    range: PERMAFROST.range * CELL },
-    absolutezero:{ color: ABSOLUTEZERO.color,  range: ABSOLUTEZERO.range * CELL },
-    railgun:     { color: RAILGUN.color,       range: RAILGUN.range * CELL },
-    inferno:     { color: INFERNO.color,       range: INFERNO.range * CELL },
-    cannonade:   { color: CANNONADE.color,     range: CANNONADE.range * CELL },
-    broadside:   { color: BROADSIDE.color,     range: BROADSIDE.range * CELL },
-    godshot:     { color: GODSHOT.color,       range: GODSHOT.range * CELL },
-    godray:      { color: GODRAY.color,        range: GODRAY.range * CELL },
-    divinity:    { color: DIVINITY.color,      range: DIVINITY.range * CELL },
-  };
-  const color = upg ? upgradeData[upg].color : def.color;
-  const range = upg ? upgradeData[upg].range : def.range * CELL;
+  const u = tower.upgrade ? UPGRADE_DEFS[tower.upgrade] : null;
+  const color = u ? u.color : def.color;
+  const range = (u ? u.range : def.range) * CELL;
 
   ctx.globalAlpha = 0.1;
   ctx.fillStyle = color;
@@ -1419,134 +1366,56 @@ function drawRangeCircle(tower) {
 
   ctx.textAlign = 'center';
   const tx = tower.x, ty = tower.y;
-
-  if (upg === 'sungod') {
-    const can = state.gold >= SUPERNOVA.cost;
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = SUNGOD.color;
-    ctx.fillText('☀ SUN GOD', tx, ty - 45);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#fff8e1';
-    ctx.fillText(`DMG:${SUNGOD.dmg}  RNG:${SUNGOD.range}  ${(1/SUNGOD.rate).toFixed(1)}s reload`, tx, ty - 32);
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? SUPERNOVA.color : '#546e7a';
-    ctx.fillText(`💥 Click → Supernova $${SUPERNOVA.cost.toLocaleString()}`, tx, ty - 18);
-  } else if (upg === 'supernova') {
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = SUPERNOVA.color;
-    ctx.fillText('💥 SUPERNOVA', tx, ty - 32);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#ffe0b2';
-    ctx.fillText(`DMG:${SUPERNOVA.dmg}  RNG:${SUPERNOVA.range}  ${(1/SUPERNOVA.rate).toFixed(1)}s reload`, tx, ty - 19);
-  } else if (upg === 'deathray') {
-    const can = state.gold >= OMEGARAY.cost;
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = DEATHRAY.color;
-    ctx.fillText('⚡ DEATH RAY', tx, ty - 45);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#ffcdd2';
-    ctx.fillText(`DPS:${DEATHRAY.dps}  RNG:${DEATHRAY.range}  continuous`, tx, ty - 32);
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? OMEGARAY.color : '#546e7a';
-    ctx.fillText(`☄ Click → Omega Ray $${OMEGARAY.cost.toLocaleString()}`, tx, ty - 18);
-  } else if (upg === 'omegaray') {
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = OMEGARAY.color;
-    ctx.fillText('☄ OMEGA RAY', tx, ty - 32);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#ffcdd2';
-    ctx.fillText(`DPS:${OMEGARAY.dps}  RNG:${OMEGARAY.range}  continuous`, tx, ty - 19);
-  } else if (upg === 'permafrost') {
-    const can = state.gold >= ABSOLUTEZERO.cost;
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = PERMAFROST.color;
-    ctx.fillText('❄ PERMAFROST', tx, ty - 45);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#e1f5fe';
-    ctx.fillText(`DPS:${PERMAFROST.dps}  RNG:${PERMAFROST.range}  SLOW:${Math.round(PERMAFROST.slowMult*100)}%`, tx, ty - 32);
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? ABSOLUTEZERO.color : '#546e7a';
-    ctx.fillText(`🧊 Click → Absolute Zero $${ABSOLUTEZERO.cost.toLocaleString()}`, tx, ty - 18);
-  } else if (upg === 'absolutezero') {
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = ABSOLUTEZERO.color;
-    ctx.fillText('🧊 ABSOLUTE ZERO', tx, ty - 32);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#e0ffff';
-    ctx.fillText(`DPS:${ABSOLUTEZERO.dps}  RNG:${ABSOLUTEZERO.range}  SLOW:${Math.round(ABSOLUTEZERO.slowMult*100)}%`, tx, ty - 19);
-  } else if (upg === 'railgun') {
-    const can = state.gold >= GODSHOT.cost;
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = RAILGUN.color;
-    ctx.fillText('🎯 RAILGUN', tx, ty - 45);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#ffcdd2';
-    ctx.fillText(`DPS:${RAILGUN.dps}  RNG:${RAILGUN.range}  continuous`, tx, ty - 32);
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? GODSHOT.color : '#546e7a';
-    ctx.fillText(`☠ Click → Godshot $${GODSHOT.cost.toLocaleString()}`, tx, ty - 18);
-  } else if (upg === 'godshot') {
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = GODSHOT.color;
-    ctx.fillText('☠ GODSHOT', tx, ty - 32);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#e040fb';
-    ctx.fillText(`DPS:${GODSHOT.dps.toLocaleString()}  RNG:${GODSHOT.range}  continuous`, tx, ty - 19);
-  } else if (upg === 'cannonade') {
-    const can = state.gold >= BROADSIDE.cost;
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = CANNONADE.color;
-    ctx.fillText('⚓ CANNONADE', tx, ty - 45);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#e1f5fe';
-    ctx.fillText(`DPS:${CANNONADE.dps.toLocaleString()}  RNG:${CANNONADE.range}  AoE`, tx, ty - 32);
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? BROADSIDE.color : '#546e7a';
-    ctx.fillText(`🚢 Click → Broadside $${BROADSIDE.cost.toLocaleString()}`, tx, ty - 18);
-  } else if (upg === 'broadside') {
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = BROADSIDE.color;
-    ctx.fillText('🚢 BROADSIDE', tx, ty - 32);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#b3e5fc';
-    ctx.fillText(`DPS:${BROADSIDE.dps.toLocaleString()}  RNG:${BROADSIDE.range}  AoE`, tx, ty - 19);
-  } else if (upg === 'inferno') {
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = INFERNO.color;
-    ctx.fillText('🔥 INFERNO', tx, ty - 32);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#ffccbc';
-    ctx.fillText(`DPS:${INFERNO.dps}  RNG:${INFERNO.range}  continuous`, tx, ty - 19);
-  } else if (tower.type === 'nuke') {
-    const can = state.gold >= SUNGOD.cost;
-    ctx.font = '10px monospace'; ctx.fillStyle = '#e1bee7';
-    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`, tx, ty - 38);
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? '#ffd700' : '#546e7a';
-    ctx.fillText(`☀ Click → Sun God $${SUNGOD.cost.toLocaleString()}`, tx, ty - 24);
-  } else if (tower.type === 'tesla') {
-    const can = state.gold >= DEATHRAY.cost;
-    ctx.font = '10px monospace'; ctx.fillStyle = '#fff9c4';
-    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`, tx, ty - 38);
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? DEATHRAY.color : '#546e7a';
-    ctx.fillText(`⚡ Click → Death Ray $${DEATHRAY.cost.toLocaleString()}`, tx, ty - 24);
-  } else if (tower.type === 'cryo') {
-    const can = state.gold >= PERMAFROST.cost;
-    ctx.font = '10px monospace'; ctx.fillStyle = '#b3e5fc';
-    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`, tx, ty - 38);
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? PERMAFROST.color : '#546e7a';
-    ctx.fillText(`❄ Click → Permafrost $${PERMAFROST.cost.toLocaleString()}`, tx, ty - 24);
-  } else if (tower.type === 'sniper') {
-    const can = state.gold >= RAILGUN.cost;
-    ctx.font = '10px monospace'; ctx.fillStyle = '#ffcdd2';
-    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`, tx, ty - 38);
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? RAILGUN.color : '#546e7a';
-    ctx.fillText(`🎯 Click → Railgun $${RAILGUN.cost.toLocaleString()}`, tx, ty - 24);
-  } else if (tower.type === 'fire') {
-    const can = state.gold >= INFERNO.cost;
-    ctx.font = '10px monospace'; ctx.fillStyle = '#ffccbc';
-    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`, tx, ty - 38);
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? INFERNO.color : '#546e7a';
-    ctx.fillText(`🔥 Click → Inferno $${INFERNO.cost.toLocaleString()}`, tx, ty - 24);
-  } else if (tower.type === 'warship') {
-    const can = state.gold >= CANNONADE.cost;
-    ctx.font = '10px monospace'; ctx.fillStyle = '#e1f5fe';
-    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`, tx, ty - 38);
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? CANNONADE.color : '#546e7a';
-    ctx.fillText(`⚓ Click → Cannonade $${CANNONADE.cost.toLocaleString()}`, tx, ty - 24);
-  } else if (upg === 'godray') {
-    const can = state.gold >= DIVINITY.cost;
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = GODRAY.color;
-    ctx.fillText('✦ GOD RAY', tx, ty - 45);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#fffde7';
-    ctx.fillText(`DPS:${GODRAY.dps.toLocaleString()}  RNG:${GODRAY.range}  AoE`, tx, ty - 32);
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? DIVINITY.color : '#546e7a';
-    ctx.fillText(`✧ Click → Divinity $${DIVINITY.cost.toLocaleString()}`, tx, ty - 18);
-  } else if (upg === 'divinity') {
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = DIVINITY.color;
-    ctx.fillText('✧ DIVINITY', tx, ty - 32);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#fff8e1';
-    ctx.fillText(`DPS:${DIVINITY.dps.toLocaleString()}  RNG:${DIVINITY.range}  AoE`, tx, ty - 19);
-  } else if (tower.type === 'god') {
-    const can = state.gold >= GODRAY.cost;
-    ctx.font = '10px monospace'; ctx.fillStyle = '#fffde7';
-    ctx.fillText(`DMG:${def.dmg}  RNG:${def.range}  ${(1/def.rate).toFixed(1)}s reload`, tx, ty - 38);
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = can ? GODRAY.color : '#546e7a';
-    ctx.fillText(`✦ Click → God Ray $${GODRAY.cost.toLocaleString()}`, tx, ty - 24);
+  if (u) {
+    ctx.font = 'bold 12px monospace'; ctx.fillStyle = u.color;
+    ctx.fillText(`${u.icon} ${u.name}`, tx, ty - 32);
+    ctx.font = '10px monospace'; ctx.fillStyle = '#e0e0e0';
+    ctx.fillText(upgradeStatLine(tower.upgrade), tx, ty - 19);
+  } else {
+    ctx.font = 'bold 11px monospace'; ctx.fillStyle = def.color;
+    ctx.fillText(def.name, tx, ty - 32);
+    ctx.font = '10px monospace'; ctx.fillStyle = '#cfd8dc';
+    ctx.fillText(baseStatLine(def), tx, ty - 19);
+  }
+  if (tower !== state.selectedPlacedTower) {
+    ctx.font = '9px monospace'; ctx.fillStyle = '#90a4ae';
+    ctx.fillText('tap for upgrade / sell', tx, ty - 45);
   }
 }
+
+// Action-button layout for the selected tower — shared by draw and input so the
+// hit regions can never drift from what's rendered.
+function towerActions(t) {
+  const tree = UPGRADE_TREE[t.type] || [];
+  const idx = t.upgrade ? tree.indexOf(t.upgrade) : -1;
+  const nextKey = tree[idx + 1] || null;
+  const refund = Math.floor((t.invested || 0) * 0.7);
+  const w = 190, h = 22, gap = 4;
+  const bx = Math.max(2, Math.min(t.x - w/2, COLS*CELL - w - 2));
+  const count = (nextKey ? 1 : 0) + 1;
+  const blockH = count*h + (count-1)*gap;
+  let by = t.y + 24;
+  if (by + blockH > TOP_H + ROWS*CELL) by = t.y - 24 - blockH;
+  const rects = {};
+  let yy = by;
+  if (nextKey) { rects.upgrade = { x:bx, y:yy, w, h }; yy += h + gap; }
+  rects.sell = { x:bx, y:yy, w, h };
+  return { nextKey, refund, rects };
+}
+
+function drawTowerActions(t) {
+  const { nextKey, refund, rects } = towerActions(t);
+  if (nextKey) {
+    const u = UPGRADE_DEFS[nextKey];
+    const can = state.gold >= u.cost;
+    drawButton(rects.upgrade.x, rects.upgrade.y, rects.upgrade.w, rects.upgrade.h,
+      `${u.icon} ${u.name} $${u.cost.toLocaleString()}`,
+      can ? '#15331a' : '#2a1414', can ? '#4caf50' : '#5a3636');
+  }
+  drawButton(rects.sell.x, rects.sell.y, rects.sell.w, rects.sell.h,
+    `✕ Sell +$${refund.toLocaleString()}`, '#3a2410', '#a1672a');
+}
+
 
 function drawPlacementPreview() {
   const { c, r } = state.hoverCell;
@@ -1589,10 +1458,13 @@ function drawGameOver() {
   ctx.fillStyle = '#ef5350';
   ctx.font = 'bold 32px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('GAME OVER', mx, my - 40);
+  ctx.fillText('GAME OVER', mx, my - 48);
   ctx.fillStyle = '#90caf9';
   ctx.font = '18px monospace';
-  ctx.fillText(`Survived ${state.wave} wave${state.wave !== 1 ? 's' : ''}`, mx, my);
+  ctx.fillText(`Survived ${state.wave} wave${state.wave !== 1 ? 's' : ''}`, mx, my - 14);
+  ctx.fillStyle = state.wave >= bestWave ? '#ffd54f' : '#78909c';
+  ctx.font = '13px monospace';
+  ctx.fillText(state.wave >= bestWave ? `★ New best!` : `Best: ${bestWave} waves`, mx, my + 8);
   drawButton(mx-75, my+30, 150, 44, 'RESTART', '#1b5e20', '#4caf50');
 }
 
@@ -1675,20 +1547,35 @@ function handleTap(mx, my) {
     state.mapDropdownOpen = false;
     // fall through so other clicks still register
   }
-  if (mx >= CW-68 && mx <= CW-10 && my >= 8 && my <= 42) { state.speed = state.speed===1?2:state.speed===2?4:1; return; }
-  if (mx >= CW-136 && mx <= CW-74 && my >= 8 && my <= 42) { state.autoStart = !state.autoStart; if (state.autoStart && !state.waveActive) startWave(); return; }
-  if (mx >= 620 && mx <= 750 && my >= 8 && my <= 42) {
-    if (state.wave === 0) state.mapDropdownOpen = !state.mapDropdownOpen;
-    return;
+  const B = topBarButtons();
+  if (inRect(mx, my, B.speed)) { state.speed = state.speed===1?2:state.speed===2?4:1; return; }
+  if (inRect(mx, my, B.pause)) { state.paused = !state.paused; return; }
+  if (inRect(mx, my, B.auto))  { state.autoStart = !state.autoStart; if (state.autoStart && !state.waveActive) startWave(); return; }
+  if (inRect(mx, my, B.map))   { if (state.wave === 0) state.mapDropdownOpen = !state.mapDropdownOpen; return; }
+  if (inRect(mx, my, B.start)) { startWave(); return; }
+
+  // Action buttons for the currently-selected tower take priority over the grid beneath them.
+  if (state.selectedPlacedTower && state.towers.includes(state.selectedPlacedTower)) {
+    const t = state.selectedPlacedTower;
+    const { nextKey, refund, rects } = towerActions(t);
+    if (nextKey && inRect(mx, my, rects.upgrade)) {
+      const u = UPGRADE_DEFS[nextKey];
+      if (state.gold >= u.cost) { state.gold -= u.cost; t.upgrade = nextKey; t.invested = (t.invested || 0) + u.cost; }
+      return;
+    }
+    if (inRect(mx, my, rects.sell)) {
+      state.gold += refund;
+      state.towers = state.towers.filter(x => x !== t);
+      state.selectedPlacedTower = null;
+      return;
+    }
   }
-  const wbx = COLS*CELL - 145;
-  if (mx >= wbx && mx <= wbx+135 && my >= 8 && my <= 42) { startWave(); return; }
 
   const px = COLS * CELL;
   if (mx >= px && mx < px+PANEL_W && my >= TOP_H) {
     let ty = TOP_H + PANEL_HEADER;
     for (const key of Object.keys(TOWER_TYPES)) {
-      if (my >= ty && my < ty+CARD_H) { state.selectedTower = key; return; }
+      if (my >= ty && my < ty+CARD_H) { state.selectedTower = key; state.selectedPlacedTower = null; return; }
       ty += CARD_H + CARD_GAP;
     }
     return;
@@ -1696,54 +1583,33 @@ function handleTap(mx, my) {
 
   if (my >= TOP_H && mx < COLS*CELL) {
     const c = Math.floor(mx/CELL), r = Math.floor((my-TOP_H)/CELL);
+    // Tap an existing tower → select it (shows range + upgrade/sell actions).
+    const existing = state.towers.find(t => t.c === c && t.r === r);
+    if (existing) { state.selectedPlacedTower = existing; return; }
+    // Empty cell → deselect, then try to place.
+    state.selectedPlacedTower = null;
     if (PATH_SET.has(`${c},${r}`)) return;
     const isWater = LAKE_SET.has(`${c},${r}`);
-    const existing = state.towers.find(t => t.c === c && t.r === r);
-    if (existing) {
-      if (existing.type === 'nuke' && !existing.upgrade && state.gold >= SUNGOD.cost) {
-        state.gold -= SUNGOD.cost; existing.upgrade = 'sungod';
-      } else if (existing.type === 'nuke' && existing.upgrade === 'sungod' && state.gold >= SUPERNOVA.cost) {
-        state.gold -= SUPERNOVA.cost; existing.upgrade = 'supernova';
-      } else if (existing.type === 'tesla' && !existing.upgrade && state.gold >= DEATHRAY.cost) {
-        state.gold -= DEATHRAY.cost; existing.upgrade = 'deathray';
-      } else if (existing.type === 'tesla' && existing.upgrade === 'deathray' && state.gold >= OMEGARAY.cost) {
-        state.gold -= OMEGARAY.cost; existing.upgrade = 'omegaray';
-      } else if (existing.type === 'cryo' && !existing.upgrade && state.gold >= PERMAFROST.cost) {
-        state.gold -= PERMAFROST.cost; existing.upgrade = 'permafrost';
-      } else if (existing.type === 'cryo' && existing.upgrade === 'permafrost' && state.gold >= ABSOLUTEZERO.cost) {
-        state.gold -= ABSOLUTEZERO.cost; existing.upgrade = 'absolutezero';
-      } else if (existing.type === 'sniper' && !existing.upgrade && state.gold >= RAILGUN.cost) {
-        state.gold -= RAILGUN.cost; existing.upgrade = 'railgun';
-      } else if (existing.type === 'sniper' && existing.upgrade === 'railgun' && state.gold >= GODSHOT.cost) {
-        state.gold -= GODSHOT.cost; existing.upgrade = 'godshot';
-      } else if (existing.type === 'fire' && !existing.upgrade && state.gold >= INFERNO.cost) {
-        state.gold -= INFERNO.cost; existing.upgrade = 'inferno';
-      } else if (existing.type === 'warship' && !existing.upgrade && state.gold >= CANNONADE.cost) {
-        state.gold -= CANNONADE.cost; existing.upgrade = 'cannonade';
-      } else if (existing.type === 'warship' && existing.upgrade === 'cannonade' && state.gold >= BROADSIDE.cost) {
-        state.gold -= BROADSIDE.cost; existing.upgrade = 'broadside';
-      } else if (existing.type === 'god' && !existing.upgrade && state.gold >= GODRAY.cost) {
-        state.gold -= GODRAY.cost; existing.upgrade = 'godray';
-      } else if (existing.type === 'god' && existing.upgrade === 'godray' && state.gold >= DIVINITY.cost) {
-        state.gold -= DIVINITY.cost; existing.upgrade = 'divinity';
-      }
-      return;
-    }
     // Warship must be placed on water; all other towers cannot be on water
     if (state.selectedTower === 'warship' && !isWater) return;
     if (state.selectedTower !== 'warship' && isWater) return;
     const def = TOWER_TYPES[state.selectedTower];
     if (state.gold < def.cost) return;
     state.gold -= def.cost;
-    state.towers.push({ c, r, x:c*CELL+CELL/2, y:r*CELL+TOP_H+CELL/2, type:state.selectedTower, cooldown:0, aimAngle:0 });
+    state.towers.push({ c, r, x:c*CELL+CELL/2, y:r*CELL+TOP_H+CELL/2, type:state.selectedTower, cooldown:0, aimAngle:0, invested:def.cost });
+    return;
   }
+
+  // Tapped empty space (e.g. top bar gap) → clear any selection.
+  state.selectedPlacedTower = null;
 }
 
 // ─── Game Loop ────────────────────────────────────────────────────────────────
 
 function loop(ts) {
-  const dt = Math.min((ts - (state.lastTime || ts)) / 1000, 0.05) * state.speed;
+  const rawDt = Math.min((ts - (state.lastTime || ts)) / 1000, 0.05);
   state.lastTime = ts;
+  const dt = state.paused ? 0 : rawDt * state.speed;
   for (const p of state.particles) {
     if (p.type === 'spark' && (p.vx || p.vy)) {
       p.x += p.vx * dt; p.y += p.vy * dt;

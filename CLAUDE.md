@@ -28,23 +28,30 @@ requestAnimationFrame(loop) → update(dt) + draw()
 
 ### State
 
-All mutable game state lives in a single `state` object returned by `createState()`. Restarting or switching maps calls `createState()` again — no partial resets. Key fields: `towers`, `enemies`, `projectiles`, `particles`, `gold`, `lives`, `wave`, `waveActive`, `speed`, `selectedTower`, `hoveredTower`, `hoverCell`.
+All mutable game state lives in a single `state` object returned by `createState()`. Restarting or switching maps calls `createState()` again — no partial resets. Key fields: `towers`, `enemies`, `projectiles`, `particles`, `gold`, `lives`, `wave`, `waveActive`, `speed`, `paused`, `autoStart`, `selectedTower` (the tower *type* armed for placement), `selectedPlacedTower` (a placed tower the player tapped, for upgrade/sell), `hoveredTower`, `hoverCell`. Best wave survived persists outside `state` in the `bestWave` module variable (`localStorage` key `td_best`).
 
 ### Tower system
 
 **Base towers** are defined in `TOWER_TYPES` (keyed by type string). Each entry has: `name`, `color`, `cost`, `dmg`, `range` (in cells), `rate` (shots/sec), `splash` (radius in cells), `burnDps`, `burnDur`, `slowMult`, `slowDur`, `desc`.
 
-**Upgrade constants** are separate top-level objects. Each tower type supports upgrades applied via `t.upgrade` (a string flag on the tower object):
+**Upgrades are table-driven.** Each upgrade is a top-level constant (e.g. `SUNGOD`, `DEATHRAY`) carrying a `mode` plus stats. Two lookup tables drive all upgrade logic:
 
-| Tower | Upgrade 1 | Upgrade 2 |
+- `UPGRADE_DEFS` — maps upgrade key (`'sungod'`, …) → its constant object.
+- `UPGRADE_TREE` — maps base tower type → ordered list of upgrade keys (its tiers), e.g. `tesla: ['deathray','omegaray']`.
+
+An applied upgrade is just the string `t.upgrade`. The `mode` field selects firing behaviour in `update()`:
+
+| `mode` | Behaviour | Examples |
 |---|---|---|
-| Nuke | `'sungod'` (SUNGOD) | `'supernova'` (SUPERNOVA) |
-| Tesla | `'deathray'` (DEATHRAY) | `'omegaray'` (OMEGARAY) |
-| Cryo | `'permafrost'` (PERMAFROST) | `'absolutezero'` (ABSOLUTEZERO) |
-| Sniper | `'railgun'` (RAILGUN) | — |
-| Fire | `'inferno'` (INFERNO) | — |
+| `'beam'` | Continuous single-target (furthest enemy), `dps` | deathray, omegaray, railgun, godshot |
+| `'aoe'` | Continuous all-in-range, `dps`; optional `slowMult`/`burn` | permafrost, absolutezero, inferno, godray, divinity, cannonade, broadside |
+| `'rate'` | AoE on a cooldown, `dmg`+`rate` | sungod, supernova |
 
-Continuous-damage upgrades (`deathray`, `omegaray`, `railgun`, `inferno`, `absolutezero`, `permafrost`) bypass the cooldown system entirely — they run at the top of the tower loop with `continue`. Rate-based AoE upgrades (`sungod`, `supernova`) use the normal cooldown path.
+`'beam'`/`'aoe'` bypass the cooldown system (handled at the top of the tower loop with `continue`); `'rate'` runs after the `t.cooldown` decrement. Adding/retuning a tier is one entry in the constant + `UPGRADE_TREE` — the firing loop, upgrade/sell click handling, and hover text are all generic. Towers track `invested` (base cost + upgrades) so selling refunds 70%.
+
+### Enemies
+
+`spawnEnemy(kind)` builds enemies; `kind` is `'normal'`/`'fast'`/`'tank'` (stats from the `ENEMY_TYPES` table: `hpMul`, `speedMul`, `r`, `color`, `stroke`) or `'boss'` (special, 14× HP, every 5th wave). Per-wave base HP is `waveHp(wave)` (gentle `50 · 1.20^(wave-1)`); `pickEnemyKind()` weights the archetype mix by wave. Gold per kill is `ceil(hp/10)`.
 
 ### Update order (per frame)
 
@@ -60,11 +67,15 @@ Continuous-damage upgrades (`deathray`, `omegaray`, `railgun`, `inferno`, `absol
 
 `draw()` calls sub-functions in painter's order: background → path → grid → towers → enemies → projectiles → particles → top bar → panel → range circle overlay → placement preview → game over screen.
 
-The panel on the right (`PANEL_W = 240`) is drawn entirely in canvas — there is no HTML UI. Tower cards are `CARD_H = 68` px tall with `CARD_GAP = 3` px between them.
+The panel on the right (`PANEL_W = 240`) is drawn entirely in canvas — there is no HTML UI. Tower cards are `CARD_H = 60` px tall with `CARD_GAP = 2` px between them.
 
 ### Maps
 
-Two hardcoded paths in the `PATHS` array (index 0 = Classic, index 1 = Winding). `setMap(idx)` rebuilds `ACTIVE_PATH`, `PATH_SET` (Set of `"col,row"` strings for O(1) placement checks), and `WAYPOINTS` (pixel-center coordinates).
+Hardcoded paths in the `PATHS` array (Classic, Winding, Lake, Serpentine — see `MAP_NAMES`). `setMap(idx)` rebuilds `ACTIVE_PATH`, `PATH_SET` (Set of `"col,row"` strings for O(1) placement checks), `WAYPOINTS` (pixel-center coordinates), and `LAKE_SET` (water cells from `LAKES[idx]` — Warship-only placement).
+
+### UI / input
+
+The right panel and top bar are pure canvas (no HTML UI). `topBarButtons()` is the single source of truth for top-bar button hit regions (map, start, pause, auto, speed) — both `drawTopBar()` and `handleTap()` read it via `inRect()`, so rendered rects and click targets can't drift. Tapping a placed tower sets `state.selectedPlacedTower`, which renders its range circle plus an action panel (`towerActions()` lays out the upgrade + sell button rects, shared by `drawTowerActions()` and `handleTap()`).
 
 ### Adding a new tower type
 
@@ -72,12 +83,10 @@ Two hardcoded paths in the `PATHS` array (index 0 = Classic, index 1 = Winding).
 2. Handle its firing behavior in `update()` (splash projectile, single target, or continuous AoE).
 3. Add a visual in `drawTowers()` — add a special-case block with `continue` for unique appearance, or let it fall through to the default barrel draw.
 4. Add a mini-tower icon in `drawMiniTower()`.
+5. If it should be upgradeable, add a chain in `UPGRADE_TREE`.
 
 ### Adding a new upgrade
 
-1. Define a top-level constant object with stats.
-2. Add the upgrade check in `update()` — place it before the `t.cooldown` decrement line if continuous, or after `sungod`/`supernova` if rate-based.
-3. Add the visual in `drawTowers()` after the existing upgrade blocks, with `continue`.
-4. Add the click path in the click handler's `if (existing)` block.
-5. Add hover text in `drawRangeCircle()`.
-6. Update the panel callout box in `drawPanel()`.
+1. Define a top-level constant with `mode` (`'beam'`/`'aoe'`/`'rate'`) + stats, register it in `UPGRADE_DEFS`, and append its key to the right `UPGRADE_TREE` chain. Firing, upgrade/sell clicks, hover text, and range circles are then handled generically — no `update()`/`handleTap()`/`drawRangeCircle()` changes needed.
+2. Add a bespoke visual in `drawTowers()` (a `t.upgrade === '…'` block with `continue`) if you want a unique look.
+3. Optionally update the panel "UPGRADE CHAINS" callout list in `drawPanel()`.
