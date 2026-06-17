@@ -128,6 +128,7 @@ const TOWER_TYPES = {
   tesla:   { name:'Tesla',   color:'#fff176', cost:1500, dmg:70,  range:3,   rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Zaps ALL in range'   },
   warship: { name:'Warship', color:'#4fc3f7', cost:2800, dmg:350, range:4,   rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Naval AoE, 5× Tesla' },
   god:     { name:'God',     color:'#fffde7', cost:2800, dmg:140, range:6,   rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0, slowDur:0, desc:'Divine AoE, 2× Tesla' },
+  blackhole:{name:'Black Hole',color:'#7e57c2',cost:15000,dmg:700, range:5,  rate:2.5,  splash:0,   burnDps:0,  burnDur:0, slowMult:0.4, slowDur:1, desc:'Gravity AoE + slow' },
 };
 
 // Upgrade definitions. `mode` drives firing behaviour:
@@ -146,16 +147,20 @@ const CANNONADE    = { mode:'aoe',  name:'CANNONADE',     icon:'⚓', cost:12000
 const BROADSIDE    = { mode:'aoe',  name:'BROADSIDE',     icon:'🚢', cost:45000,  dps:5000, range:6,   color:'#0288d1' };
 const GODRAY       = { mode:'aoe',  name:'GOD RAY',       icon:'✦', cost:10000,  dps:1800, range:8,   color:'#ffeb3b' };
 const DIVINITY     = { mode:'aoe',  name:'DIVINITY',      icon:'✧', cost:40000,  dps:5400, range:8,   color:'#fff59d' };
+const QUASAR       = { mode:'aoe',  name:'QUASAR',        icon:'🌀', cost:80000,  dps:9000, range:6,   slowMult:0.3,  color:'#b388ff' };
+const SINGULARITY  = { mode:'aoe',  name:'SINGULARITY',   icon:'🕳', cost:300000, dps:28000,range:7.5, slowMult:0.2,  color:'#e040fb' };
 
 // Lookup by upgrade key + the per-base-tower upgrade chains (ordered tiers).
 const UPGRADE_DEFS = {
   sungod:SUNGOD, supernova:SUPERNOVA, deathray:DEATHRAY, omegaray:OMEGARAY,
   permafrost:PERMAFROST, absolutezero:ABSOLUTEZERO, railgun:RAILGUN, godshot:GODSHOT,
   inferno:INFERNO, cannonade:CANNONADE, broadside:BROADSIDE, godray:GODRAY, divinity:DIVINITY,
+  quasar:QUASAR, singularity:SINGULARITY,
 };
 const UPGRADE_TREE = {
   nuke:['sungod','supernova'], tesla:['deathray','omegaray'], cryo:['permafrost','absolutezero'],
   sniper:['railgun','godshot'], fire:['inferno'], warship:['cannonade','broadside'], god:['godray','divinity'],
+  blackhole:['quasar','singularity'],
 };
 
 // Enemy archetypes. Boss is handled separately (isBoss flag).
@@ -180,8 +185,71 @@ function createState() {
     towers: [], enemies: [], projectiles: [], particles: [],
     hoverCell: null, hoveredTower: null, selectedPlacedTower: null,
     mapDropdownOpen: false,
+    abilityCd: { airstrike: 0, freeze: 0, repair: 0 },
+    screenFlash: 0,
     gameOver: false, lastTime: 0,
   };
+}
+
+// ─── Tower power: infinite "Ascension" upgrades (the late-game gold sink) ──────
+// Each ascension level adds +30% damage; cost rises exponentially so even billions
+// get consumed. Ascension spend is sunk (not added to `invested`), so it neither
+// refunds on sell nor inflates the next ascension cost.
+function towerDmgMult(t) { return 1 + 0.30 * (t.ascend || 0); }
+function ascendCost(t) {
+  const base = Math.max(800, (t.invested || 800) * 0.4);
+  return Math.round(base * Math.pow(1.6, t.ascend || 0));
+}
+// What tapping a selected tower buys next: the next tier upgrade, else an ascension level.
+function nextPurchase(t) {
+  const tree = UPGRADE_TREE[t.type] || [];
+  const idx = t.upgrade ? tree.indexOf(t.upgrade) : -1;
+  const nextKey = tree[idx + 1] || null;
+  if (nextKey) { const u = UPGRADE_DEFS[nextKey]; return { kind:'tier', key:nextKey, label:`${u.icon} ${u.name}`, cost:u.cost }; }
+  return { kind:'ascend', label:`✦ ASCEND Lv ${(t.ascend || 0) + 1}`, cost: ascendCost(t) };
+}
+function buyTowerUpgrade(t) {
+  const p = nextPurchase(t);
+  if (state.gold < p.cost) return false;
+  state.gold -= p.cost;
+  if (p.kind === 'tier') { t.upgrade = p.key; t.invested = (t.invested || 0) + p.cost; }
+  else { t.ascend = (t.ascend || 0) + 1; }
+  return true;
+}
+
+// ─── Spendable abilities (active gold sinks for mid-wave plays) ────────────────
+const ABILITY_CD = { airstrike: 6, freeze: 8, repair: 4 };
+function abilityCost(key) {
+  const w = state.wave;
+  if (key === 'airstrike') return 5000 + 1500 * w;
+  if (key === 'freeze')    return 3000 + 1000 * w;
+  return 5000 + 2000 * w; // repair
+}
+function useAbility(key) {
+  if (state.abilityCd[key] > 0) return;
+  const cost = abilityCost(key);
+  if (state.gold < cost) return;
+  state.gold -= cost;
+  state.abilityCd[key] = ABILITY_CD[key];
+  if (key === 'airstrike') {
+    state.screenFlash = 0.55;
+    for (const e of state.enemies) {
+      if (e.dead || e.reached) continue;
+      damageEnemy(e, e.maxHp * 0.4);            // 40% of max HP — clears packs, dents bosses
+    }
+    for (let i = 0; i < 7; i++) {
+      const ex = 40 + Math.random() * (COLS * CELL - 80), ey = TOP_H + 40 + Math.random() * (ROWS * CELL - 80);
+      for (let k = 1; k <= 3; k++) state.particles.push({ type:'ring', x:ex, y:ey, r:0, maxR:50*k, life:0.6, maxLife:0.6, color:'#ff7043' });
+      for (let s = 0; s < 10; s++) { const a = Math.random()*Math.PI*2, sp = 120+Math.random()*180;
+        state.particles.push({ type:'spark', x:ex, y:ey, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:0.7, maxLife:0.7, color:'#ffd54f', r:5 }); }
+    }
+  } else if (key === 'freeze') {
+    for (const e of state.enemies) { if (!e.dead && !e.reached) applySlow(e, 0.12, 4); }
+    for (let i = 0; i < 14; i++) { const a = Math.random()*Math.PI*2, rr = Math.random()*COLS*CELL*0.45;
+      state.particles.push({ type:'spark', x:COLS*CELL/2+Math.cos(a)*rr, y:TOP_H+ROWS*CELL/2+Math.sin(a)*rr, vx:0, vy:-12, life:0.7, maxLife:0.7, color:'#80d8ff', r:5 }); }
+  } else { // repair
+    state.lives += 5;
+  }
 }
 
 function startWave() {
@@ -278,6 +346,10 @@ function damageEnemy(e, dmg) {
 function update(dt) {
   if (state.gameOver) return;
 
+  // Ability cooldowns + screen-flash decay (tick on game time so 4× recharges faster)
+  for (const k in state.abilityCd) if (state.abilityCd[k] > 0) state.abilityCd[k] = Math.max(0, state.abilityCd[k] - dt);
+  if (state.screenFlash > 0) state.screenFlash = Math.max(0, state.screenFlash - dt * 1.6);
+
   // Spawn
   if (state.waveActive && state.waveSpawned < state.waveTotal) {
     state.spawnTimer -= dt;
@@ -335,6 +407,7 @@ function update(dt) {
 
   // Towers shoot
   for (const t of state.towers) {
+    const mult = towerDmgMult(t);   // ascension damage scaling
     // Continuous-fire upgrades bypass the cooldown system.
     const u = t.upgrade ? UPGRADE_DEFS[t.upgrade] : null;
     if (u && u.mode === 'beam') {
@@ -345,7 +418,7 @@ function update(dt) {
         if (!e.dead && !e.reached && dist(t, e) <= range && e.wpIdx > bestWp) { tgt = e; bestWp = e.wpIdx; }
       }
       t.rayTarget = tgt;
-      if (tgt) { damageEnemyContinuous(tgt, u.dps * dt); t.aimAngle = Math.atan2(tgt.y - t.y, tgt.x - t.x); }
+      if (tgt) { damageEnemyContinuous(tgt, u.dps * mult * dt); t.aimAngle = Math.atan2(tgt.y - t.y, tgt.x - t.x); }
       continue;
     }
     if (u && u.mode === 'aoe') {
@@ -354,8 +427,8 @@ function update(dt) {
       const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= range);
       for (const e of inRange) {
         if (u.slowMult != null) applySlow(e, u.slowMult, 0.25);
-        if (u.burn) applyBurn(e, u.dps, 0.25);
-        damageEnemyContinuous(e, u.dps * dt);
+        if (u.burn) applyBurn(e, u.dps * mult, 0.25);
+        damageEnemyContinuous(e, u.dps * mult * dt);
       }
       if (inRange.length > 0 && Math.random() < 0.14) {
         const angle = Math.random() * Math.PI * 2, radius = Math.random() * range;
@@ -376,7 +449,7 @@ function update(dt) {
       if (inRange.length === 0) continue;
       t.cooldown = 1 / u.rate;
       for (const e of inRange) {
-        damageEnemy(e, u.dmg);
+        damageEnemy(e, u.dmg * mult);
         state.particles.push({ type:'arc', x1:t.x, y1:t.y, x2:e.x, y2:e.y, life:0.08, maxLife:0.08, color:u.color });
       }
       state.particles.push({ type:'ring', x:t.x, y:t.y, r:0, maxR:range, life:0.18, maxLife:0.18, color:u.color });
@@ -389,20 +462,22 @@ function update(dt) {
       if (inRange.length === 0) continue;
       t.cooldown = 1 / def.rate;
       for (const e of inRange) {
-        damageEnemy(e, def.dmg);
+        damageEnemy(e, def.dmg * mult);
         state.particles.push({ type:'arc', x1:t.x, y1:t.y, x2:e.x, y2:e.y, life:0.1, maxLife:0.1, color:def.color });
         state.particles.push({ type:'spark', x:e.x, y:e.y, vx:0, vy:0, life:0.12, maxLife:0.12, color:def.color, r:7 });
       }
       continue;
     }
 
-    // Tesla / God: zap ALL enemies in range at once — no targeting needed
-    if (t.type === 'tesla' || t.type === 'god') {
+    // Tesla / God / Black Hole: hit ALL enemies in range at once — no targeting.
+    // Black Hole also drags everything caught in its pull (gravity slow).
+    if (t.type === 'tesla' || t.type === 'god' || t.type === 'blackhole') {
       const inRange = state.enemies.filter(e => !e.dead && !e.reached && dist(t, e) <= rangePixels);
       if (inRange.length === 0) continue;
       t.cooldown = 1 / def.rate;
       for (const e of inRange) {
-        damageEnemy(e, def.dmg);
+        damageEnemy(e, def.dmg * mult);
+        if (t.type === 'blackhole') applySlow(e, def.slowMult, def.slowDur);
         // Arc lightning particle
         state.particles.push({ type:'arc', x1:t.x, y1:t.y, x2:e.x, y2:e.y, life:0.1, maxLife:0.1, color:def.color });
         state.particles.push({ type:'spark', x:e.x, y:e.y, vx:0, vy:0, life:0.12, maxLife:0.12, color:def.color, r:7 });
@@ -424,28 +499,28 @@ function update(dt) {
       // Slow missile that detonates
       state.projectiles.push({
         ptype:'nuke', x:t.x, y:t.y, tx:target.x, ty:target.y, target,
-        dmg:def.dmg, splashR:def.splash*CELL, speed:140, color:def.color, r:9, hit:false,
+        dmg:def.dmg * mult, splashR:def.splash*CELL, speed:140, color:def.color, r:9, hit:false,
       });
     } else if (t.type === 'cryo') {
       // Ice projectile → splash slow
       state.projectiles.push({
         ptype:'cryo', x:t.x, y:t.y, tx:target.x, ty:target.y, target,
-        dmg:def.dmg, splashR:def.splash*CELL, speed:280, color:def.color, r:6,
+        dmg:def.dmg * mult, splashR:def.splash*CELL, speed:280, color:def.color, r:6,
         slowMult:def.slowMult, slowDur:def.slowDur, hit:false,
       });
     } else if (t.type === 'fire') {
       // Fire splash projectile
       state.projectiles.push({
         ptype:'fire', x:t.x, y:t.y, tx:target.x, ty:target.y, target,
-        dmg:def.dmg, splashR:def.splash*CELL, speed:260, color:def.color, r:5,
-        burnDps:def.burnDps, burnDur:def.burnDur, hit:false,
+        dmg:def.dmg * mult, splashR:def.splash*CELL, speed:260, color:def.color, r:5,
+        burnDps:def.burnDps * mult, burnDur:def.burnDur, hit:false,
       });
     } else {
       // Single target (basic, sniper)
       const projSpeed = t.type === 'sniper' ? 500 : 300;
       state.projectiles.push({
         ptype:'single', x:t.x, y:t.y, tx:target.x, ty:target.y, target,
-        dmg:def.dmg, speed:projSpeed, color:def.color, r:4, hit:false,
+        dmg:def.dmg * mult, speed:projSpeed, color:def.color, r:4, hit:false,
       });
     }
   }
@@ -532,6 +607,12 @@ function draw() {
   drawEnemies();
   drawProjectiles();
   drawParticles();
+  if (state.screenFlash > 0) {
+    ctx.globalAlpha = Math.min(0.6, state.screenFlash);
+    ctx.fillStyle = '#fff3e0';
+    ctx.fillRect(0, TOP_H, COLS * CELL, ROWS * CELL);
+    ctx.globalAlpha = 1;
+  }
   drawTopBar();
   drawPanel();
   const infoTower = state.selectedPlacedTower || state.hoveredTower;
@@ -901,6 +982,56 @@ function drawTowers() {
       continue;
     }
 
+    if (t.upgrade === 'singularity') {
+      const spin = now * 0.008 + t.x;
+      ctx.fillStyle = SINGULARITY.color; ctx.fillRect(t.x - 12, t.y - 12, 24, 24);
+      const pulse = 0.5 + 0.4 * Math.sin(now / 90);
+      ctx.globalAlpha = pulse * 0.5;
+      ctx.fillStyle = '#e040fb';
+      ctx.beginPath(); ctx.arc(t.x, t.y, 36, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.arc(t.x, t.y, 13, 0, Math.PI*2); ctx.fill();
+      for (let r = 0; r < 3; r++) {
+        ctx.strokeStyle = ['#e040fb','#ea80fc','#fff'][r]; ctx.lineWidth = 2.5 - r*0.5;
+        ctx.beginPath(); ctx.arc(t.x, t.y, 16 + r*5, spin*(1+r*0.3), spin*(1+r*0.3) + Math.PI*1.5); ctx.stroke();
+      }
+      continue;
+    }
+
+    if (t.upgrade === 'quasar') {
+      const spin = now * 0.006 + t.x;
+      ctx.fillStyle = QUASAR.color; ctx.fillRect(t.x - 12, t.y - 12, 24, 24);
+      ctx.globalAlpha = 0.4 + 0.3 * Math.sin(now / 120);
+      ctx.fillStyle = '#b388ff';
+      ctx.beginPath(); ctx.arc(t.x, t.y, 28, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#1a0a2e';
+      ctx.beginPath(); ctx.arc(t.x, t.y, 12, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = '#e1bee7'; ctx.lineWidth = 3;
+      for (let i = 0; i < 2; i++) { const a = spin + i*Math.PI;
+        ctx.beginPath(); ctx.moveTo(t.x + Math.cos(a)*10, t.y + Math.sin(a)*10);
+        ctx.lineTo(t.x + Math.cos(a)*34, t.y + Math.sin(a)*34); ctx.stroke(); }
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(t.x, t.y, 16, spin, spin + Math.PI*1.5); ctx.stroke();
+      continue;
+    }
+
+    if (t.type === 'blackhole') {
+      const spin = now * 0.004 + t.x;
+      ctx.globalAlpha = 0.3 + 0.2 * Math.sin(now / 200 + t.x);
+      ctx.fillStyle = '#7e57c2';
+      ctx.beginPath(); ctx.arc(t.x, t.y, 20, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#1a0a2e';
+      ctx.beginPath(); ctx.arc(t.x, t.y, 11, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = '#b388ff'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(t.x, t.y, 15, spin, spin + Math.PI*1.4); ctx.stroke();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(t.x, t.y, 15, spin + Math.PI, spin + Math.PI*1.7); ctx.stroke();
+      continue;
+    }
+
     if (t.type === 'god') {
       const pulse = 0.45 + 0.35 * Math.sin(now / 130 + t.x * 0.08);
       ctx.globalAlpha = pulse * 0.4;
@@ -998,6 +1129,29 @@ function drawTowers() {
       ctx.fillRect(2, -bh/2, blen, bh);
     }
     ctx.restore();
+  }
+
+  // Ascension aura + level badge (drawn on top of every tower so it shows over
+  // the bespoke upgrade visuals). Intensity scales with ascension level.
+  const now2 = Date.now();
+  for (const t of state.towers) {
+    if (!t.ascend) continue;
+    const lvl = t.ascend;
+    const glow = 0.25 + 0.2 * Math.sin(now2 / 180 + t.x);
+    ctx.globalAlpha = Math.min(0.5, glow + lvl * 0.015);
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(t.x, t.y, 19 + Math.min(8, lvl * 0.4), 0, Math.PI*2); ctx.stroke();
+    ctx.globalAlpha = 1;
+    // Level badge, top-right of the tower
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(t.x + 6, t.y - 18, 16, 12);
+    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 1;
+    ctx.strokeRect(t.x + 6, t.y - 18, 16, 12);
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(lvl > 99 ? '99' : String(lvl), t.x + 14, t.y - 9);
   }
 }
 
@@ -1242,36 +1396,61 @@ function drawPanel() {
   ctx.fillStyle = '#607d8b';
   ctx.font = '9px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('Tap grid to place · tap tower to', px + PANEL_W/2, ty + 12);
-  ctx.fillText('upgrade or sell (70% refund)', px + PANEL_W/2, ty + 22);
+  ctx.fillText('Tap tower to upgrade · tap again to ascend', px + PANEL_W/2, ty + 11);
 
-  // Upgrade callout box
-  const bx = px + 6, by = ty + 32, bw = PANEL_W - 12, bh = 133;
-  ctx.fillStyle = '#0a1520';
-  ctx.fillRect(bx, by, bw, bh);
-  ctx.strokeStyle = '#2a3a4a';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(bx, by, bw, bh);
+  drawAbilities();
+}
 
-  ctx.font = 'bold 10px monospace';
+// Layout for the spendable-ability buttons in the panel — single source for draw + input.
+function abilityButtons() {
+  const px = COLS * CELL;
+  const n = Object.keys(TOWER_TYPES).length;
+  const top = TOP_H + PANEL_HEADER + n * (CARD_H + CARD_GAP) + 32;
+  const x = px + 6, w = PANEL_W - 12, h = 25, gap = 3;
+  return {
+    airstrike: { x, y: top,               w, h },
+    freeze:    { x, y: top + (h + gap),   w, h },
+    repair:    { x, y: top + 2*(h + gap), w, h },
+  };
+}
+
+const ABILITY_META = {
+  airstrike: { icon:'💥', name:'Airstrike', tip:'damage all', color:'#ff7043' },
+  freeze:    { icon:'❄',  name:'Freeze All', tip:'4s slow',  color:'#80d8ff' },
+  repair:    { icon:'❤',  name:'+5 Lives',  tip:'repair',    color:'#ef5350' },
+};
+
+function drawAbilities() {
+  const px = COLS * CELL, B = abilityButtons();
   ctx.fillStyle = '#90caf9';
-  ctx.fillText('UPGRADE CHAINS', px + PANEL_W/2, by + 13);
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('ABILITIES', px + PANEL_W/2, B.airstrike.y - 8);
 
-  ctx.font = '9px monospace';
-  ctx.fillStyle = '#ce93d8';
-  ctx.fillText('☀ Nuke→Sun God→Supernova', px + PANEL_W/2, by + 27);
-  ctx.fillStyle = '#ff6659';
-  ctx.fillText('⚡ Tesla→Death Ray→Omega Ray', px + PANEL_W/2, by + 40);
-  ctx.fillStyle = '#00e5ff';
-  ctx.fillText('❄ Cryo→Permafrost→Abs.Zero', px + PANEL_W/2, by + 53);
-  ctx.fillStyle = '#ff4444';
-  ctx.fillText('🎯 Sniper→Railgun→Godshot', px + PANEL_W/2, by + 66);
-  ctx.fillStyle = '#ff3300';
-  ctx.fillText('🔥 Fire→Inferno', px + PANEL_W/2, by + 79);
-  ctx.fillStyle = '#4fc3f7';
-  ctx.fillText('⚓ Warship→Cannonade→Broadside', px + PANEL_W/2, by + 92);
-  ctx.fillStyle = '#fff59d';
-  ctx.fillText('✦ God→God Ray→Divinity', px + PANEL_W/2, by + 105);
+  for (const key of ['airstrike','freeze','repair']) {
+    const r = B[key], m = ABILITY_META[key];
+    const cost = abilityCost(key);
+    const cd = state.abilityCd[key];
+    const can = state.gold >= cost && cd <= 0;
+    ctx.fillStyle = can ? '#152b33' : '#1a1f24';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeStyle = can ? m.color : '#37474f';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+    // Cooldown wipe overlay
+    if (cd > 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(r.x, r.y, r.w * (cd / ABILITY_CD[key]), r.h);
+    }
+    ctx.textAlign = 'left';
+    ctx.fillStyle = can ? '#fff' : '#607d8b';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText(`${m.icon} ${m.name}`, r.x + 6, r.y + 16);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = can ? '#fff176' : '#546e7a';
+    ctx.font = '10px monospace';
+    ctx.fillText(`$${cost.toLocaleString()}`, r.x + r.w - 6, r.y + 16);
+  }
 }
 
 function drawMiniTower(cx, cy, type, def) {
@@ -1334,6 +1513,12 @@ function drawMiniTower(cx, cy, type, def) {
     ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'center';
     ctx.fillText('✦', cx, cy + 4);
+  } else if (type === 'blackhole') {
+    ctx.fillStyle = '#1a0a2e';
+    ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#b388ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, 11, 0.4, 0.4 + Math.PI*1.4); ctx.stroke();
   } else {
     const blen = type === 'sniper' ? 16 : 11;
     ctx.fillRect(cx+2, cy-3, blen, 6);
@@ -1367,18 +1552,25 @@ function drawRangeCircle(tower) {
 
   ctx.textAlign = 'center';
   const tx = tower.x, ty = tower.y;
+  const ascTag = tower.ascend ? `  ✦${tower.ascend}` : '';
   if (u) {
     ctx.font = 'bold 12px monospace'; ctx.fillStyle = u.color;
-    ctx.fillText(`${u.icon} ${u.name}`, tx, ty - 32);
+    ctx.fillText(`${u.icon} ${u.name}${ascTag}`, tx, ty - 32);
     ctx.font = '10px monospace'; ctx.fillStyle = '#e0e0e0';
     ctx.fillText(upgradeStatLine(tower.upgrade), tx, ty - 19);
   } else {
     ctx.font = 'bold 11px monospace'; ctx.fillStyle = def.color;
-    ctx.fillText(def.name, tx, ty - 32);
+    ctx.fillText(`${def.name}${ascTag}`, tx, ty - 32);
     ctx.font = '10px monospace'; ctx.fillStyle = '#cfd8dc';
     ctx.fillText(baseStatLine(def), tx, ty - 19);
   }
-  if (tower !== state.selectedPlacedTower) {
+  if (tower === state.selectedPlacedTower) {
+    // Tell the player exactly what tapping the tower again will buy.
+    const p = nextPurchase(tower);
+    const can = state.gold >= p.cost;
+    ctx.font = 'bold 10px monospace'; ctx.fillStyle = can ? '#a5d6a7' : '#ef9a9a';
+    ctx.fillText(`▲ TAP TOWER → ${p.label}  $${p.cost.toLocaleString()}`, tx, ty - 46);
+  } else {
     ctx.font = '9px monospace'; ctx.fillStyle = '#90a4ae';
     ctx.fillText('tap for upgrade / sell', tx, ty - 45);
   }
@@ -1386,33 +1578,18 @@ function drawRangeCircle(tower) {
 
 // Action-button layout for the selected tower — shared by draw and input so the
 // hit regions can never drift from what's rendered.
+// Upgrading/ascending is done by tapping the tower itself; the only button here is Sell.
 function towerActions(t) {
-  const tree = UPGRADE_TREE[t.type] || [];
-  const idx = t.upgrade ? tree.indexOf(t.upgrade) : -1;
-  const nextKey = tree[idx + 1] || null;
   const refund = Math.floor((t.invested || 0) * 0.7);
-  const w = 190, h = 22, gap = 4;
+  const w = 150, h = 22;
   const bx = Math.max(2, Math.min(t.x - w/2, COLS*CELL - w - 2));
-  const count = (nextKey ? 1 : 0) + 1;
-  const blockH = count*h + (count-1)*gap;
   let by = t.y + 24;
-  if (by + blockH > TOP_H + ROWS*CELL) by = t.y - 24 - blockH;
-  const rects = {};
-  let yy = by;
-  if (nextKey) { rects.upgrade = { x:bx, y:yy, w, h }; yy += h + gap; }
-  rects.sell = { x:bx, y:yy, w, h };
-  return { nextKey, refund, rects };
+  if (by + h > TOP_H + ROWS*CELL) by = t.y - 24 - h;
+  return { refund, rects: { sell: { x:bx, y:by, w, h } } };
 }
 
 function drawTowerActions(t) {
-  const { nextKey, refund, rects } = towerActions(t);
-  if (nextKey) {
-    const u = UPGRADE_DEFS[nextKey];
-    const can = state.gold >= u.cost;
-    drawButton(rects.upgrade.x, rects.upgrade.y, rects.upgrade.w, rects.upgrade.h,
-      `${u.icon} ${u.name} $${u.cost.toLocaleString()}`,
-      can ? '#15331a' : '#2a1414', can ? '#4caf50' : '#5a3636');
-  }
+  const { refund, rects } = towerActions(t);
   drawButton(rects.sell.x, rects.sell.y, rects.sell.w, rects.sell.h,
     `✕ Sell +$${refund.toLocaleString()}`, '#3a2410', '#a1672a');
 }
@@ -1555,15 +1732,16 @@ function handleTap(mx, my) {
   if (inRect(mx, my, B.map))   { if (state.wave === 0) state.mapDropdownOpen = !state.mapDropdownOpen; return; }
   if (inRect(mx, my, B.start)) { startWave(); return; }
 
-  // Action buttons for the currently-selected tower take priority over the grid beneath them.
+  // Spendable abilities (panel buttons).
+  const A = abilityButtons();
+  for (const key of ['airstrike','freeze','repair']) {
+    if (inRect(mx, my, A[key])) { useAbility(key); return; }
+  }
+
+  // Sell button for the currently-selected tower takes priority over the grid beneath it.
   if (state.selectedPlacedTower && state.towers.includes(state.selectedPlacedTower)) {
     const t = state.selectedPlacedTower;
-    const { nextKey, refund, rects } = towerActions(t);
-    if (nextKey && inRect(mx, my, rects.upgrade)) {
-      const u = UPGRADE_DEFS[nextKey];
-      if (state.gold >= u.cost) { state.gold -= u.cost; t.upgrade = nextKey; t.invested = (t.invested || 0) + u.cost; }
-      return;
-    }
+    const { refund, rects } = towerActions(t);
     if (inRect(mx, my, rects.sell)) {
       state.gold += refund;
       state.towers = state.towers.filter(x => x !== t);
@@ -1584,9 +1762,14 @@ function handleTap(mx, my) {
 
   if (my >= TOP_H && mx < COLS*CELL) {
     const c = Math.floor(mx/CELL), r = Math.floor((my-TOP_H)/CELL);
-    // Tap an existing tower → select it (shows range + upgrade/sell actions).
+    // Tap an existing tower → select it. Tap it again (when already selected) →
+    // buy its next upgrade tier, or an ascension level once fully upgraded.
     const existing = state.towers.find(t => t.c === c && t.r === r);
-    if (existing) { state.selectedPlacedTower = existing; return; }
+    if (existing) {
+      if (existing === state.selectedPlacedTower) buyTowerUpgrade(existing);
+      else state.selectedPlacedTower = existing;
+      return;
+    }
     // Empty cell → deselect, then try to place.
     state.selectedPlacedTower = null;
     if (PATH_SET.has(`${c},${r}`)) return;
@@ -1597,7 +1780,7 @@ function handleTap(mx, my) {
     const def = TOWER_TYPES[state.selectedTower];
     if (state.gold < def.cost) return;
     state.gold -= def.cost;
-    state.towers.push({ c, r, x:c*CELL+CELL/2, y:r*CELL+TOP_H+CELL/2, type:state.selectedTower, cooldown:0, aimAngle:0, invested:def.cost });
+    state.towers.push({ c, r, x:c*CELL+CELL/2, y:r*CELL+TOP_H+CELL/2, type:state.selectedTower, cooldown:0, aimAngle:0, invested:def.cost, ascend:0 });
     return;
   }
 

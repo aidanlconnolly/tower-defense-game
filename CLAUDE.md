@@ -28,7 +28,7 @@ requestAnimationFrame(loop) → update(dt) + draw()
 
 ### State
 
-All mutable game state lives in a single `state` object returned by `createState()`. Restarting or switching maps calls `createState()` again — no partial resets. Key fields: `towers`, `enemies`, `projectiles`, `particles`, `gold`, `lives`, `wave`, `waveActive`, `speed`, `paused`, `autoStart`, `selectedTower` (the tower *type* armed for placement), `selectedPlacedTower` (a placed tower the player tapped, for upgrade/sell), `hoveredTower`, `hoverCell`. Best wave survived persists outside `state` in the `bestWave` module variable (`localStorage` key `td_best`).
+All mutable game state lives in a single `state` object returned by `createState()`. Restarting or switching maps calls `createState()` again — no partial resets. Key fields: `towers`, `enemies`, `projectiles`, `particles`, `gold`, `lives`, `wave`, `waveActive`, `speed`, `paused`, `autoStart`, `selectedTower` (the tower *type* armed for placement), `selectedPlacedTower` (a placed tower the player tapped, for upgrade/sell), `hoveredTower`, `hoverCell`, `abilityCd` (per-ability cooldown timers), `screenFlash` (airstrike flash alpha). Best wave survived persists outside `state` in the `bestWave` module variable (`localStorage` key `td_best`).
 
 ### Tower system
 
@@ -47,7 +47,13 @@ An applied upgrade is just the string `t.upgrade`. The `mode` field selects firi
 | `'aoe'` | Continuous all-in-range, `dps`; optional `slowMult`/`burn` | permafrost, absolutezero, inferno, godray, divinity, cannonade, broadside |
 | `'rate'` | AoE on a cooldown, `dmg`+`rate` | sungod, supernova |
 
-`'beam'`/`'aoe'` bypass the cooldown system (handled at the top of the tower loop with `continue`); `'rate'` runs after the `t.cooldown` decrement. Adding/retuning a tier is one entry in the constant + `UPGRADE_TREE` — the firing loop, upgrade/sell click handling, and hover text are all generic. Towers track `invested` (base cost + upgrades) so selling refunds 70%.
+`'beam'`/`'aoe'` bypass the cooldown system (handled at the top of the tower loop with `continue`); `'rate'` runs after the `t.cooldown` decrement. Adding/retuning a tier is one entry in the constant + `UPGRADE_TREE` — the firing loop, upgrade/sell click handling, and hover text are all generic. Towers track `invested` (base cost + tier upgrades only) so selling refunds 70%.
+
+**Black Hole** is the premium base tower (`blackhole`, $15k) — fires like Tesla/God (zap-all-in-range on cooldown) but also `applySlow`s everything caught (gravity well), then upgrades via `quasar` → `singularity` (both `'aoe'` mode). Its base firing is special-cased alongside `tesla`/`god` in `update()`.
+
+**Ascension — the infinite gold sink.** Every placed tower carries `ascend` (level count). `towerDmgMult(t)` = `1 + 0.30·ascend` multiplies *all* damage that tower deals (applied at every damage site / projectile creation in `update()`). `ascendCost(t)` = `max(800, invested·0.4)·1.6^ascend` — exponential, so even billions get consumed. Ascension spend is **sunk** (never added to `invested`), so it neither refunds on sell nor inflates the next ascension cost. `nextPurchase(t)` returns the next tier upgrade if one exists, else the next ascension level; `buyTowerUpgrade(t)` spends gold on it. Ascended towers draw a gold aura + a level badge (a second pass at the end of `drawTowers()`).
+
+**Spendable abilities** (active gold sinks, panel buttons below the tower cards): `airstrike` (40% max-HP to all + screen flash), `freeze` (4 s hard slow on all), `repair` (+5 lives — the one genuinely scarce resource). `abilityButtons()` is the single source of truth for their rects (draw + input); `ABILITY_CD` sets cooldowns (ticked on game time in `update()`); `abilityCost(key)` scales with wave; `useAbility(key)` executes. Costs/cooldowns shown live with a cooldown-wipe overlay in `drawAbilities()`.
 
 ### Enemies
 
@@ -75,18 +81,20 @@ Hardcoded paths in the `PATHS` array (Classic, Winding, Lake, Serpentine — see
 
 ### UI / input
 
-The right panel and top bar are pure canvas (no HTML UI). `topBarButtons()` is the single source of truth for top-bar button hit regions (map, start, pause, auto, speed) — both `drawTopBar()` and `handleTap()` read it via `inRect()`, so rendered rects and click targets can't drift. Tapping a placed tower sets `state.selectedPlacedTower`, which renders its range circle plus an action panel (`towerActions()` lays out the upgrade + sell button rects, shared by `drawTowerActions()` and `handleTap()`).
+The right panel and top bar are pure canvas (no HTML UI). `topBarButtons()` and `abilityButtons()` are the single sources of truth for their hit regions — both the matching `draw*()` and `handleTap()` read them via `inRect()`, so rendered rects and click targets can't drift.
+
+**Upgrade-by-tapping-the-tower:** tapping an unselected placed tower sets `state.selectedPlacedTower` (shows range circle + a "▲ TAP TOWER → …" prompt naming the next purchase). Tapping that *same* tower again calls `buyTowerUpgrade()` (next tier, then ascension levels) — the player never has to reach for a button to upgrade. `towerActions()`/`drawTowerActions()` now lay out **only** a Sell button (positioned below/above the tower).
 
 ### Adding a new tower type
 
 1. Add an entry to `TOWER_TYPES`.
-2. Handle its firing behavior in `update()` (splash projectile, single target, or continuous AoE).
+2. Handle its firing behavior in `update()` (splash projectile, single target, or continuous AoE). Remember to multiply damage by `towerDmgMult(t)` so ascension applies.
 3. Add a visual in `drawTowers()` — add a special-case block with `continue` for unique appearance, or let it fall through to the default barrel draw.
 4. Add a mini-tower icon in `drawMiniTower()`.
 5. If it should be upgradeable, add a chain in `UPGRADE_TREE`.
+6. Note the panel renders one card per `TOWER_TYPES` entry and the abilities block sits below them via `abilityButtons()` (which derives its Y from the tower count) — adding a tower auto-reflows both, but keep the total within the panel height (`TOP_H + ROWS*CELL`).
 
 ### Adding a new upgrade
 
 1. Define a top-level constant with `mode` (`'beam'`/`'aoe'`/`'rate'`) + stats, register it in `UPGRADE_DEFS`, and append its key to the right `UPGRADE_TREE` chain. Firing, upgrade/sell clicks, hover text, and range circles are then handled generically — no `update()`/`handleTap()`/`drawRangeCircle()` changes needed.
 2. Add a bespoke visual in `drawTowers()` (a `t.upgrade === '…'` block with `continue`) if you want a unique look.
-3. Optionally update the panel "UPGRADE CHAINS" callout list in `drawPanel()`.
